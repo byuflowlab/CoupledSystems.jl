@@ -1,181 +1,436 @@
 using CoupledSystems
 using Test
 
-@testset "Constructors" begin
+@testset "ExplicitComponent" begin
 
-    # System 1
+    # This uses the paraboloid example from OpenMDAO
 
-    # residual of first system
-    function f1!(F, x, u)
-        F[1] = 4*x[1]^2 - x[2] + u[1]
-        F[2] = 2*x[1] + (1 - x[2])^2 + u[2]
-        return F
+    f! = function(y, x)
+        y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
+        return y
+    end
+    df! = function(dydx, x)
+        dydx[1,1] = 2*(x[1]-3) + x[2]
+        dydx[1,2] = x[1] + 2*(x[2]+4)
+        return dydx
+    end
+    fdf! = function(y, dydx, x)
+        f!(y, x)
+        df!(dydx, x)
+        return y, dydx
+    end
+    x = zeros(2)
+    y = zeros(1)
+    dydx = zeros(1,2)
+    comp1 = ExplicitComponent(x, y; f=f!, df=df!, fdf=fdf!, dydx=dydx)
+    comp2 = ExplicitComponent(x, y; f=f!, df=df!, fdf=fdf!)
+    comp3 = ExplicitComponent(x, y; f=f!, df=df!)
+    comp4 = ExplicitComponent(x, y; fdf=fdf!)
+
+    for comp in [comp2, comp3, comp4]
+
+        x = rand(2)
+        @test outputs(comp1, x) == outputs(comp, x)
+        @test outputs!(comp1, y, x) == outputs!(comp, y, x)
+        @test outputs!(comp1, x) == outputs!(comp, x)
+        @test outputs!!(comp1, x) == outputs!!(comp, x)
+        @test outputs(comp1) == outputs(comp)
+
+        x = rand(2)
+        @test jacobian(comp1, x) == jacobian(comp, x)
+        @test jacobian!(comp1, dydx, x) == jacobian!(comp, dydx, x)
+        @test jacobian!(comp1, x) == jacobian!(comp, x)
+        @test jacobian!!(comp1, x) == jacobian!!(comp, x)
+        @test jacobian(comp1) == jacobian(comp)
+
+        x = rand(2)
+        @test outputs_and_jacobian(comp1, x) == outputs_and_jacobian(comp, x)
+        @test outputs_and_jacobian!(comp1, y, dydx, x) == outputs_and_jacobian!(comp, y, dydx, x)
+        @test outputs_and_jacobian!(comp1, x) == outputs_and_jacobian!(comp, x)
+        @test outputs_and_jacobian!!(comp1, x) == outputs_and_jacobian!!(comp, x)
+        @test outputs_and_jacobian(comp1) == outputs_and_jacobian(comp)
+    end
+end
+
+@testset "ExplicitComponent - Derivatives" begin
+
+    # This uses the paraboloid example from OpenMDAO
+
+    f! = function(y, x)
+        y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
+        return y
+    end
+    df! = function(dydx, x)
+        dydx[1,1] = 2*(x[1]-3) + x[2]
+        dydx[1,2] = x[1] + 2*(x[2]+4)
+        return dydx
+    end
+    fdf! = function(y, dydx, x)
+        f!(y, x)
+        df!(dydx, x)
+        return y, dydx
+    end
+    x = zeros(2)
+    y = zeros(1)
+    dydx = zeros(1,2)
+    comp = ExplicitComponent(x, y; f=f!, df=df!, fdf=fdf!)
+
+    comp_FAD = ExplicitComponent(x, y; f=f!, deriv=ForwardAD())
+    comp_RAD = ExplicitComponent(x, y; f=f!, deriv=ReverseAD())
+    comp_FFD = ExplicitComponent(x, y; f=f!, deriv=ForwardFD())
+    comp_CFD = ExplicitComponent(x, y; f=f!, deriv=CentralFD())
+    comp_XFD = ExplicitComponent(x, y; f=f!, deriv=ComplexFD())
+
+    for dcomp in [comp_FAD, comp_RAD, comp_FFD, comp_CFD, comp_XFD]
+
+        x = rand(2)
+        @test isapprox(outputs(comp, x), outputs(dcomp, x), atol=1e-6)
+        @test isapprox(outputs!(comp, y, x), outputs!(dcomp, y, x), atol=1e-6)
+        @test isapprox(outputs!(comp, x), outputs!(dcomp, x), atol=1e-6)
+        @test isapprox(outputs!!(comp, x), outputs!!(dcomp, x), atol=1e-6)
+        @test isapprox(outputs(comp), outputs(dcomp), atol=1e-6)
+
+        x = rand(2)
+        @test isapprox(jacobian(comp, x), jacobian(dcomp, x), atol=1e-6)
+        @test isapprox(jacobian!(comp, dydx, x), jacobian!(dcomp, dydx, x), atol=1e-6)
+        @test isapprox(jacobian!(comp, x), jacobian!(dcomp, x), atol=1e-6)
+        @test isapprox(jacobian!!(comp, x), jacobian!!(dcomp, x), atol=1e-6)
+        @test isapprox(jacobian(comp), jacobian(dcomp), atol=1e-6)
+
+        x = rand(2)
+        @test all(isapprox.(outputs_and_jacobian(comp, x), outputs_and_jacobian(dcomp, x), atol=1e-6))
+        @test all(isapprox.(outputs_and_jacobian!(comp, y, dydx, x), outputs_and_jacobian!(dcomp, y, dydx, x), atol=1e-6))
+        @test all(isapprox.(outputs_and_jacobian!(comp, x), outputs_and_jacobian!(dcomp, x), atol=1e-6))
+        @test all(isapprox.(outputs_and_jacobian!!(comp, x), outputs_and_jacobian!!(dcomp, x), atol=1e-6))
+        @test all(isapprox.(outputs_and_jacobian(comp), outputs_and_jacobian(dcomp), atol=1e-6))
+    end
+end
+
+@testset "ExplicitSystem" begin
+
+    # System Inputs
+    xsys = zeros(5)
+
+    # First Component: Paraboloid
+    f1! = function(y, x)
+        y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
+        return y
+    end
+    x1 = zeros(2)
+    y1 = zeros(1)
+    mapping1 = [
+        (0,1), # system inputs, index 1
+        (0,2), # system inputs, index 2
+        ]
+    comp1 = ExplicitComponent(x1, y1; f=f1!, deriv=ForwardAD())
+
+    # Second Component: Quadratic
+    f2! = function(y, x)
+        y[1] = x[1]*x[4]^2 + x[2]*x[4] + x[3]*x[4] + 1
+        return y
+    end
+    x2 = zeros(4)
+    y2 = zeros(1)
+    mapping2 = [
+        (0,3), # system inputs, index 3
+        (0,4), # system inputs, index 4
+        (0,5), # system inputs, index 5
+        (1,1), # component 1 outputs, index 1
+    ]
+    comp2 = ExplicitComponent(x2, y2; f=f2!, deriv=ForwardAD())
+
+    # Third Component: Trigometric Functions
+    f3! = function(y, x)
+        y[1] = sin(x[1])
+        y[2] = cos(x[2])
+        return y
+    end
+    x3 = zeros(2)
+    y3 = zeros(2)
+    mapping3 = [
+        (1,1), # component 1 outputs, index 1
+        (2,1), # component 2 outputs, index 2
+    ]
+    comp3 = ExplicitComponent(x3, y3; f=f3!, deriv=ForwardAD())
+
+    # System Outputs
+    ysys = zeros(2)
+    output_mapping = [
+        (3,1), # component 3 outputs, index 1
+        (3,2), # component 3 outputs, index 2
+    ]
+
+    # put it together
+    x0 = xsys
+    y0 = ysys
+    components = (comp1, comp2, comp3)
+    component_mapping = (mapping1, mapping2, mapping3)
+
+    sys = ExplicitSystem(x0, y0, components, component_mapping, output_mapping;
+        mode=Forward())
+
+    x = rand(5)
+    y = rand(2)
+    @test outputs!(sys, x) == outputs(sys, x)
+    @test outputs!!(sys, x) == outputs!(comp, y, x)
+    x = rand(5)
+    y = rand(2)
+    @test jacobian!(sys, x) == jacobian(sys, x)
+    @test jacobian!!(sys, x) == jacobian!(comp, y, x)
+    x = rand(5)
+    y = rand(2)
+    @test outputs_and_jacobian!(sys, x) == outputs_and_jacobian(sys, x)
+    @test outputs_and_jacobian!!(sys, x) == outputs_and_jacobian!(comp, y, x)
+    
+end
+
+@testset "ExplicitSystem - Derivatives" begin
+
+    # System Inputs
+    xsys = zeros(5)
+
+    # First Component: Paraboloid
+    f1! = function(y, x)
+        y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
+        return y
+    end
+    x1 = zeros(2)
+    y1 = zeros(1)
+    mapping1 = [
+        (0,1), # system inputs, index 1
+        (0,2), # system inputs, index 2
+        ]
+    comp1 = ExplicitComponent(x1, y1; f=f1!, deriv=ForwardAD())
+
+    # Second Component: Quadratic
+    f2! = function(y, x)
+        y[1] = x[1]*x[4]^2 + x[2]*x[4] + x[3]*x[4] + 1
+        return y
+    end
+    x2 = zeros(4)
+    y2 = zeros(1)
+    mapping2 = [
+        (0,3), # system inputs, index 3
+        (0,4), # system inputs, index 4
+        (0,5), # system inputs, index 5
+        (1,1), # component 1 outputs, index 1
+    ]
+    comp2 = ExplicitComponent(x2, y2; f=f2!, deriv=ForwardAD())
+
+    # Third Component: Trigometric Functions
+    f3! = function(y, x)
+        y[1] = sin(x[1])
+        y[2] = cos(x[2])
+        return y
+    end
+    x3 = zeros(2)
+    y3 = zeros(2)
+    mapping3 = [
+        (1,1), # component 1 outputs, index 1
+        (2,1), # component 2 outputs, index 2
+    ]
+    comp3 = ExplicitComponent(x3, y3; f=f3!, deriv=ForwardAD())
+
+    # System Outputs
+    ysys = zeros(2)
+    output_mapping = [
+        (3,1), # component 3 outputs, index 1
+        (3,2), # component 3 outputs, index 2
+    ]
+
+    # put it together
+    x0 = xsys
+    y0 = ysys
+    components = (comp1, comp2, comp3)
+    component_mapping = (mapping1, mapping2, mapping3)
+
+    sys = ExplicitSystem(x0, y0, components, component_mapping, output_mapping;
+        mode=Forward())
+
+end
+
+@testset "ImplicitComponent" begin
+
+    # This uses the quadratic example from OpenMDAO
+
+    f! = function(r, x, y)
+        r[1] = x[1]*y[1]^2 + x[2]*y[1] + x[3]
+        return r
+    end
+    dfdx! = function(drdx, x, y)
+        drdx[1,1] = y[1]^2
+        drdx[1,2] = y[1]
+        drdx[1,3] = 1
+        return drdx
+    end
+    dfdy! = function(drdy, x, y)
+        drdy[1,1] = 2*x[1]*y[1] + x[2]
+        return drdy
+    end
+    fdfdx! = function(r, drdx, x, y)
+        f!(r, x, y)
+        dfdx!(drdx, x, y)
+        return r, drdx
+    end
+    fdfdy! = function(r, drdy, x, y)
+        f!(r, x, y)
+        dfdy!(drdy, x, y)
+        return r, drdy
+    end
+    fdf! = function(r, drdx, drdy, x, y)
+        f!(r, x, y)
+        dfdx!(drdx, x, y)
+        dfdy!(drdy, x, y)
+        return r, drdx, drdy
+    end
+    x = [2,0,-1]
+    y = zeros(1)
+    r = zeros(1)
+    drdx = zeros(1,3)
+    drdy = zeros(1,1)
+    comp1 = ImplicitComponent(x, y, r; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+        fdfdy=fdfdy!, fdf=fdf!, drdx=drdx, drdy=drdy)
+    comp2 = ImplicitComponent(x, y, r; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+        fdfdy=fdfdy!, fdf=fdf!)
+    comp3 = ImplicitComponent(x, y, r; f=f!, dfdx=dfdx!, dfdy=dfdy!)
+    comp4 = ImplicitComponent(x, y, r; fdfdx=fdfdx!, fdfdy=fdfdy!)
+    comp5 = ImplicitComponent(x, y, r; fdf=fdf!)
+
+    for comp in [comp2, comp3, comp4, comp5]
+        x = rand(3)
+        y = rand(1)
+        @test residuals(comp1, x, y) == residuals(comp, x, y)
+        @test residuals!(comp1, r, x, y) == residuals!(comp, r, x, y)
+        @test residuals!(comp1, x, y) == residuals!(comp, x, y)
+        @test residuals!!(comp1, x, y) == residuals!!(comp, x, y)
+        @test residuals(comp1) == residuals(comp)
+
+        x = rand(3)
+        y = rand(1)
+        @test residual_input_jacobian(comp1, x, y) == residual_input_jacobian(comp, x, y)
+        @test residual_input_jacobian!(comp1, drdx, x, y) == residual_input_jacobian!(comp, drdx, x, y)
+        @test residual_input_jacobian!(comp1, x, y) == residual_input_jacobian!(comp, x, y)
+        @test residual_input_jacobian!!(comp1, x, y) == residual_input_jacobian!!(comp, x, y)
+        @test residual_input_jacobian(comp1) == residual_input_jacobian(comp)
+
+        x = rand(3)
+        y = rand(1)
+        @test residual_output_jacobian(comp1, x, y) == residual_output_jacobian(comp, x, y)
+        @test residual_output_jacobian!(comp1, drdy, x, y) == residual_output_jacobian!(comp, drdy, x, y)
+        @test residual_output_jacobian!(comp1, x, y) == residual_output_jacobian!(comp, x, y)
+        @test residual_output_jacobian!!(comp1, x, y) == residual_output_jacobian!!(comp, x, y)
+        @test residual_output_jacobian(comp1) == residual_output_jacobian(comp)
+
+        x = rand(3)
+        y = rand(1)
+        @test residuals_and_input_jacobian(comp1, x, y) == residuals_and_input_jacobian(comp, x, y)
+        @test residuals_and_input_jacobian!(comp1, r, drdx, x, y) == residuals_and_input_jacobian!(comp, r, drdx, x, y)
+        @test residuals_and_input_jacobian!(comp1, x, y) == residuals_and_input_jacobian!(comp, x, y)
+        @test residuals_and_input_jacobian!!(comp1, x, y) == residuals_and_input_jacobian!!(comp, x, y)
+        @test residuals_and_input_jacobian(comp1) == residuals_and_input_jacobian(comp)
+
+        x = rand(3)
+        y = rand(1)
+        @test residuals_and_output_jacobian(comp1, x, y) == residuals_and_output_jacobian(comp, x, y)
+        @test residuals_and_output_jacobian!(comp1, r, drdy, x, y) == residuals_and_output_jacobian!(comp, r, drdy, x, y)
+        @test residuals_and_output_jacobian!(comp1, x, y) == residuals_and_output_jacobian!(comp, x, y)
+        @test residuals_and_output_jacobian!!(comp1, x, y) == residuals_and_output_jacobian!!(comp, x, y)
+        @test residuals_and_output_jacobian(comp1) == residuals_and_output_jacobian(comp)
+
+        x = rand(3)
+        y = rand(1)
+        @test residuals_and_jacobians(comp1, x, y) == residuals_and_jacobians(comp, x, y)
+        @test residuals_and_jacobians!(comp1, r, drdx, drdy, x, y) == residuals_and_jacobians!(comp, r, drdx, drdy, x, y)
+        @test residuals_and_jacobians!(comp1, x, y) == residuals_and_jacobians!(comp, x, y)
+        @test residuals_and_jacobians!!(comp1, x, y) == residuals_and_jacobians!!(comp, x, y)
+        @test residuals_and_jacobians(comp1) == residuals_and_jacobians(comp)
     end
 
-    # output of first system
-    function g1!(G, x, u)
-        G[1] = x[1]
-        G[2] = x[1] + x[2]
-        return G
+end
+
+@testset "ImplicitComponent - Derivatives" begin
+
+    # This uses the quadratic example from OpenMDAO
+
+    f! = function(r, x, y)
+        r[1] = x[1]*y[1]^2 + x[2]*y[1] + x[3]
+        return r
     end
-
-    # (partial) derivative of residual wrt x
-    function dfdx1!(dF, x, u)
-        dF[1,1] = 8*x[1]
-        dF[1,2] = -1
-        dF[2,1] = 2
-        dF[2,2] = -2*(1 - x[2])
-        return dF
+    dfdx! = function(drdx, x, y)
+        drdx[1,1] = y[1]^2
+        drdx[1,2] = y[1]
+        drdx[1,3] = 1
+        return drdx
     end
-
-    # (partial) derivative of residual wrt u
-    function dfdu1!(dF, x, u)
-        dF[1,1] = 1
-        dF[1,2] = 0
-        dF[2,1] = 0
-        dF[2,2] = 1
-        return dF
+    dfdy! = function(drdy, x, y)
+        drdy[1,1] = 2*x[1]*y[1] + x[2]
+        return drdy
     end
+    x = [2,0,-1]
+    y = zeros(1)
+    r = zeros(1)
+    drdx = zeros(1,3)
+    drdy = zeros(1,1)
+    comp = ImplicitComponent(x, y, r; f=f!, dfdx=dfdx!, dfdy=dfdy!)
 
-    # (partial) derivative of output wrt x
-    function dgdx1!(dG, x, u)
-        dG[1,1] = 1
-        dG[1,2] = 0
-        dG[2,1] = 1
-        dG[2,2] = 1
-        return dG
+    comp_FAD = ImplicitComponent(x, y, r; f=f!, xderiv=ForwardAD(), yderiv=ForwardAD())
+    comp_RAD = ImplicitComponent(x, y, r; f=f!, xderiv=ReverseAD(), yderiv=ReverseAD())
+    comp_FFD = ImplicitComponent(x, y, r; f=f!, xderiv=ForwardFD(), yderiv=ForwardFD())
+    comp_CFD = ImplicitComponent(x, y, r; f=f!, xderiv=CentralFD(), yderiv=CentralFD())
+    comp_XFD = ImplicitComponent(x, y, r; f=f!, xderiv=ComplexFD(), yderiv=ComplexFD())
+
+    i = 0
+    for dcomp in [comp_FAD, comp_RAD, comp_FFD, comp_CFD, comp_XFD]
+
+        i += 1
+
+        x = rand(3)
+        y = rand(1)
+        @test isapprox(residuals(comp, x, y), residuals(dcomp, x, y))
+        @test isapprox(residuals!(comp, r, x, y), residuals!(dcomp, r, x, y))
+        @test isapprox(residuals!(comp, x, y), residuals!(dcomp, x, y))
+        @test isapprox(residuals!!(comp, x, y), residuals!!(dcomp, x, y))
+        @test isapprox(residuals(comp), residuals(dcomp))
+
+        x = rand(3)
+        y = rand(1)
+        @test isapprox(residual_input_jacobian(comp, x, y), residual_input_jacobian(dcomp, x, y))
+        @test isapprox(residual_input_jacobian!(comp, drdx, x, y), residual_input_jacobian!(dcomp, drdx, x, y))
+        @test isapprox(residual_input_jacobian!(comp, x, y), residual_input_jacobian!(dcomp, x, y))
+        @test isapprox(residual_input_jacobian!!(comp, x, y), residual_input_jacobian!!(dcomp, x, y))
+        @test isapprox(residual_input_jacobian(comp), residual_input_jacobian(dcomp))
+
+        x = rand(3)
+        y = rand(1)
+        @test isapprox(residual_output_jacobian(comp, x, y), residual_output_jacobian(dcomp, x, y))
+        @test isapprox(residual_output_jacobian!(comp, drdy, x, y), residual_output_jacobian!(dcomp, drdy, x, y))
+        @test isapprox(residual_output_jacobian!(comp, x, y), residual_output_jacobian!(dcomp, x, y))
+        @test isapprox(residual_output_jacobian!!(comp, x, y), residual_output_jacobian!!(dcomp, x, y))
+        @test isapprox(residual_output_jacobian(comp), residual_output_jacobian(dcomp))
+
+        x = rand(3)
+        y = rand(1)
+        @test all(isapprox.(residuals_and_input_jacobian(comp, x, y), residuals_and_input_jacobian(dcomp, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_input_jacobian!(comp, r, drdx, x, y), residuals_and_input_jacobian!(dcomp, r, drdx, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_input_jacobian!(comp, x, y), residuals_and_input_jacobian!(dcomp, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_input_jacobian!!(comp, x, y), residuals_and_input_jacobian!!(dcomp, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_input_jacobian(comp), residuals_and_input_jacobian(dcomp), atol=1e-6))
+
+        x = rand(3)
+        y = rand(1)
+        @test all(isapprox.(residuals_and_output_jacobian(comp, x, y), residuals_and_output_jacobian(dcomp, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_output_jacobian!(comp, r, drdy, x, y), residuals_and_output_jacobian!(dcomp, r, drdy, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_output_jacobian!(comp, x, y), residuals_and_output_jacobian!(dcomp, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_output_jacobian!!(comp, x, y), residuals_and_output_jacobian!!(dcomp, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_output_jacobian(comp), residuals_and_output_jacobian(dcomp), atol=1e-6))
+
+        x = rand(3)
+        y = rand(1)
+        @test all(isapprox.(residuals_and_jacobians(comp, x, y), residuals_and_jacobians(dcomp, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_jacobians!(comp, r, drdx, drdy, x, y), residuals_and_jacobians!(dcomp, r, drdx, drdy, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_jacobians!(comp, x, y), residuals_and_jacobians!(dcomp, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_jacobians!!(comp, x, y), residuals_and_jacobians!!(dcomp, x, y), atol=1e-6))
+        @test all(isapprox.(residuals_and_jacobians(comp), residuals_and_jacobians(dcomp), atol=1e-6))
+
     end
-
-    # (partial) derivative of output wrt u
-    function dgdu1!(dG, x, u)
-        dG[1,1] = 0
-        dG[1,2] = 0
-        dG[2,1] = 0
-        dG[2,2] = 0
-        return dG
-    end
-
-    # System 2
-
-    # residual and output of second system
-    function f2!(F, x, u)
-        F[1] = x[1] + x[2] + u[1]
-        F[2] = (x[1]-3)^2 - x[2]^2 + u[2]
-        return F
-    end
-
-    # output of first system
-    function g2!(G, x, u)
-        G[1] = x[1] + 3*x[2]
-        G[2] = cos(x[1] + x[2]^2)
-        return G
-    end
-
-    # (partial) derivative of residual wrt x
-    function dfdx2!(dF, x, u)
-        dF[1,1] = 1
-        dF[1,2] = 1
-        dF[2,1] = 2*(x[1]-3)
-        dF[2,2] = -2*x[2]
-        return dF
-    end
-
-    # (partial) derivative of residual wrt u
-    function dfdu2!(dF, x, u)
-        dF[1,1] = 1
-        dF[1,2] = 0
-        dF[2,1] = 0
-        dF[2,2] = 1
-        return dF
-    end
-
-    # (partial) derivative of output wrt x
-    function dgdx2!(dG, x, u)
-        dG[1,1] = 1
-        dG[1,2] = 3
-        dG[2,1] = -sin(x[1] + x[2]^2)
-        dG[2,2] = 2*x[2]*sin(x[1] + x[2]^2)
-        return dG
-    end
-
-    # (partial) derivative of output wrt u
-    function dgdu2!(dG, x, u)
-        dG[1,1] = 0
-        dG[1,2] = 0
-        dG[2,1] = 0
-        dG[2,2] = 0
-        return dG
-    end
-
-    nsys = 2
-
-    x0 = [zeros(2) for i = 1:2]
-    u0 = [zeros(2) for i = 1:2]
-    f0 = [zeros(2) for i = 1:2]
-    g0 = [zeros(2) for i = 1:2]
-    dfdx0 = [zeros(2,2) for i = 1:2]
-    dfdu0 = [zeros(2,2) for i = 1:2]
-    dgdx0 = [zeros(2,2) for i = 1:2]
-    dgdu0 = [zeros(2,2) for i = 1:2]
-    mapping = [3,4,1,2];
-
-    f! = (f1!, f2!)
-    g! = (g1!, g2!)
-    dfdx! = (dfdx1!, dfdx2!)
-    dfdu! = (dfdu1!, dfdu2!)
-    dgdx! = (dgdx1!, dgdx2!)
-    dgdu! = (dgdu1!, dgdu2!)
-
-    mapping_system = [[2, 2], [1, 1]]
-    mapping_index = [[1, 2], [1, 2]]
-
-    # construction from individual equations
-    system = CoupledSystem(f0, g0, dfdx0, dfdu0, dgdx0, dgdu0, mapping_system,
-        mapping_index; f!, g!, dfdx!, dfdu!, dgdx!, dgdu!)
-
-    # construct fg! from f! and g!
-    fg! = Vector{Function}(undef, nsys)
-    for i = 1:nsys
-        fi!, gi! = f![i], g![i]
-        fg![i] = function(F, G, x, u)
-            fi!(F, x, u)
-            gi!(G, x, u)
-            return nothing
-        end
-    end
-
-    # construct dfg! from dfdx!, dfdu!, dgdx!, and dgdu!
-    dfg! = Vector{Function}(undef, nsys)
-    for i = 1:nsys
-        dfdxi!, dfdui! = dfdx![i], dfdu![i]
-        dgdxi!, dgdui! = dgdx![i], dgdu![i]
-        dfg![i] = function(DFX, DFU, DGX, DGU, x, u)
-            dfdxi!(DFX, x, u)
-            dfdui!(DFU, x, u)
-            dgdxi!(DGX, x, u)
-            dgdui!(DGU, x, u)
-            return nothing
-        end
-    end
-
-    # construction from combined residuals/outputs and combined partials
-    system = CoupledSystem(f0, g0, dfdx0, dfdu0, dgdx0, dgdu0, mapping_system,
-        mapping_index; fg!, dfg!)
-
-    # construct fgdfg! from fg! and dfg!
-    fgdfg! = Vector{Function}(undef, nsys)
-    for i = 1:nsys
-        fgi! = fg![i]
-        dfgi! = dfg![i]
-        fgdfg![i] = function(F, G, DFX, DFU, DGX, DGU, x, u)
-            fgi!(F, G, x, u)
-            dfgi!(DFX, DFU, DGX, DGU, x, u)
-            return nothing
-        end
-    end
-
-    # construction from combined residuals, outputs, and partials
-    system = CoupledSystem(f0, g0, dfdx0, dfdu0, dgdx0, dgdu0, mapping_system,
-        mapping_index; fgdfg!)
-
 end
