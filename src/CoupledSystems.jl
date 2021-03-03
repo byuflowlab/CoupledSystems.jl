@@ -2,13 +2,14 @@ module CoupledSystems
 
 using SparseArrays, SparseDiffTools
 using FiniteDiff, ForwardDiff, ReverseDiff, DiffResults
+using NLsolve
 
 export AbstractComponent
 export AbstractExplicitComponent, ExplicitComponent, ExplicitSystem
-export ImplicitComponent
-export outputs, outputs!, outputs!!
-export jacobian, jacobian!, jacobian!!
-export outputs_and_jacobian, outputs_and_jacobian!, outputs_and_jacobian!!
+export AbstractImplicitComponent, ImplicitComponent, ImplicitSystem
+export outputs, outputs!, outputs!!, outputs!!!
+export jacobian, jacobian!, jacobian!!, jacobian!!!
+export outputs_and_jacobian, outputs_and_jacobian!, outputs_and_jacobian!!, outputs_and_jacobian!!!
 export residuals, residuals!, residuals!!
 export residual_input_jacobian, residual_input_jacobian!, residual_input_jacobian!!
 export residual_output_jacobian, residual_output_jacobian!, residual_output_jacobian!!

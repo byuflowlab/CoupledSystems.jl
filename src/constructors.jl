@@ -86,6 +86,75 @@ function ExplicitComponent(x0, y0; f=nothing, df=nothing,
 end
 
 """
+    ExplicitComponent(component::ImplicitComponent; solver, y0, dydx, sparsity)
+
+Constructs an explicit system component from an implicit system component
+coupled with a solver and an initial guess.
+"""
+function ExplicitComponent(component::ImplicitComponent; solver=nothing,
+    y0=rand(length(component.y_f)), dydx = nothing, sparsity=DensePattern())
+
+    # allocate storage and initialize with NaNs (since values are as of yet undefined)
+    x_f = NaN .* component.x_f
+    x_df = x_f # alias with x_f since both are computed simulataneously
+    y = NaN .* component.y_f
+    dydx = isnothing(dydx) ? allocate_jacobian(x_f, y, sparsity) : NaN .* dydx
+
+    f = function(y, x)
+        # assemble inputs to nonlinear solver
+        f! = (r, y) -> residuals!(component, r, x, y)
+        j! = (drdy, y) -> residual_output_jacobian!(component, drdy, x, y)
+        fj! = function(r, drdy, y)
+            residuals!(component, r, x, y)
+            residual_output_jacobian!(component, drdy, x, y)
+            return r, drdy
+        end
+        r = residuals(component)
+        drdy = residual_output_jacobian(component)
+        y_f = component.y_f
+        y_df = component.y_dfdy
+        f_calls = [0,]
+        df_calls = [0,]
+
+        df = OnceDifferentiable(f!, j!, fj!, r, drdy, y_f, y_df, f_calls, df_calls)
+
+        # solve nonlinear system of equations for outputs
+        results = nlsolve(df, y0, method=:newton, linesearch=BackTracking())
+
+        if results.f_converged
+            copyto!(y0, results.zero)
+            copyto!(y, results.zero)
+        else
+            copyto!(y, NaN)
+        end
+
+        # return outputs
+        return y
+    end
+
+    fdf = function(y, dydx, x)
+
+        # converge residual function
+        f(y, x)
+
+        # get jacobian of the residual function with respect to the inputs
+        drdx = residual_input_jacobian(component, x, y)
+
+        # get jacobian of the residual function with respect to the outputs
+        drdy = residual_output_jacobian(component, x, y)
+
+        # get analytic sensitivities
+        dydx .= -drdy\drdx
+
+        return y, dydx
+    end
+
+    df = (dydx, x) -> fdf(y, dydx, x)[2]
+
+    return ExplicitComponent(f, df, fdf, x_f, x_df, y, dydx)
+end
+
+"""
     ExplicitSystem(x0, y0, components, component_input_mapping, output_mapping)
 
 Construct an explicit system component from a collection of explicit system
@@ -164,7 +233,7 @@ function ExplicitSystem(x0, y0, components, component_input_mapping, output_mapp
     y = NaN .* y0
     dydx = isnothing(dydx) ? allocate_jacobian(x0, y0, sparsity) : NaN .* dydx
 
-    # construct reversed mapping method
+    # construct forward mode mapping
     input_mapping, component_output_mapping = output_to_input_mapping(x0,
         components, component_input_mapping, output_mapping)
 
@@ -430,4 +499,129 @@ function ImplicitComponent(x0, y0, r0; f=nothing, dfdx=nothing, dfdy=nothing,
 
     return ImplicitComponent(f, dfdx, dfdy, fdfdx, fdfdy, fdf, x_f, y_f, x_dfdx,
         y_dfdx, x_dfdy, y_dfdy, r, drdx, drdy)
+end
+
+
+"""
+    ImplicitComponent(component::ExplicitComponent)
+
+Constructs an implicit system component from an explicit system component.
+"""
+function ImplicitComponent(component::ExplicitComponent)
+
+    # allocate storage and initialize with NaNs (since values are as of yet undefined)
+    x_f = NaN .* component.x_f
+    y_f = NaN .* component.y
+    x_dfdx = NaN .* component.x_f
+    y_dfdx = NaN .* component.y
+    x_dfdy = NaN .* component.x_f
+    y_dfdy = NaN .* component.y
+    r = NaN .* component.y
+    drdx = NaN .* component.dydx
+    drdy = sparse(1:length(r), 1:length(y_f), ones(length(r)))
+
+    f = function(r, x, y)
+        # update outputs, store in residual
+        outputs!(component, r, x)
+        # subtract provided outputs
+        r .-= y
+        # return residual
+        return r
+    end
+
+    dfdx = (drdx, x, y) -> jacobian!(component, drdx, x)
+
+    fdfdx = function(r, drdx, x, y)
+        # update outputs, store in residual
+        outputs_and_jacobian!(component, r, drdx, x)
+        # subtract provided outputs
+        r .-= y
+        # return residual
+        return r
+    end
+
+    dfdy = function(drdy, x, y)
+        # negative identity matrix
+        drdy .= 0
+        for i = 1:length(y)
+            drdy[i,i] = -1
+        end
+    end
+
+    fdfdy = function(r, drdy, x, y)
+        f(r, x, y)
+        dfdy(drdy, x, y)
+        return r, drdy
+    end
+
+    fdf = function(r, drdx, drdy, x, y)
+        fdfdx(r, drdx, x, y)
+        dfdy(drdy, x, y)
+        return r, drdx, drdy
+    end
+
+    return ImplicitComponent(f, dfdx, dfdy, fdfdx, fdfdy, fdf, x_f, y_f, x_dfdx,
+        y_dfdx, x_dfdy, y_dfdy, r, drdx, drdy)
+end
+
+function ImplicitSystem(x0, y0, components, component_input_mapping, output_mapping;
+    xsys = nothing, ysys = nothing, rsys = nothing, drdx = nothing,
+    drdy = nothing, mode = Reverse())
+
+    # check that there is an input mapping for each component
+    @assert length(components) == length(component_input_mapping) "There must be an input mapping for each component"
+    for ic = 1:nc
+        # check that there is an input mapping for each input to the component
+        @assert length(components[ic].x_f) == length(component_input_mapping[ic]) "Input mapping for component $ic must have the same length as the number of inputs to component $ic"
+        for ix = 1:length(component_input_mapping[ic])
+            (jc, jy) = component_input_mapping[ic][ix]
+            if iszero(jc)
+                @assert jy <= length(x0) "Input $ix of "*
+                    "component $ic corresponds to non-existant system input $jy"
+            else
+                # check that each component input only uses available component outputs
+                @assert jc <= nc "Input $ix of component $ic comes from "*
+                    "non-existant component $jc"
+                @assert jy <= length(outputs(components[jc])) "Input $ix of component $ic "*
+                    "corresponds to non-existant output $jx of component $jc"
+            end
+        end
+        for iy = 1:length(output_mapping)
+            (jc, jy) = output_mapping[iy]
+            if iszero(jc)
+                # check that system output uses available system inputs
+                @assert jy <= length(x0) "System output $iy "*
+                    "corresponds to non-existant system input $jy"
+            else
+                # check that each component input only uses available component outputs
+                @assert jc <= nc "System output $iy comes from non-existant "
+                    "component $jc"
+                @assert jy <= length(outputs(components[jc])) "System output $iy "*
+                    "corresponds to non-existant output $jx of component $jc"
+            end
+        end
+    end
+
+    # construct forward mode mapping
+    input_mapping, component_output_mapping = output_to_input_mapping(x0,
+        components, component_input_mapping, output_mapping
+
+    # allocate storage and initialize with NaNs (since values are not yet defined)
+    x_f = vcat(eltype(x0)[], inputs.(components)...) .* NaN
+    y_f = vcat(eltype(y0)[], outputs.(components)...) .* NaN
+    x_dfdx = copy(x_f)
+    y_dfdx = copy(y_f)
+    x_dfdy = copy(x_f)
+    y_dfdy = copy(y_f)
+    r = copy(y_f)
+    drdx = spzeros(promote_type(eltype(rsys), eltype(xsys)), length(rsys), length(xsys))
+    drdy = spzeros(promote_type(eltype(rsys), eltype(ysys)), length(rsys), length(ysys))
+
+    # construct index for accessing outputs/residuals for each component
+    idx = vcat(0, cumsum(length.(residuals.(components))))
+
+    return ImplicitSystem(Tuple(components), collect(input_mapping),
+        collect(component_output_mapping), collect(component_input_mapping),
+        collect(output_mapping), x_f, y_f, x_dfdx, y_dfdx, x_dfdy, y_dfdy, r,
+        drdx, drdy, idx, mode)
 end
