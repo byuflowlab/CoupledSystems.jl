@@ -579,8 +579,8 @@ function outputs_and_jacobian!!(component::ExplicitSystem, x, ::Reverse)
     copyto!(component.x_f, x)
     copyto!(component.x_df, x)
     subcomponent_outputs_and_jacobians!(component, x)
-    reverse_mode_jacobian!(component, dydx)
-    update_system_outputs!(component, y, x)
+    reverse_mode_jacobian!(component, component.dydx)
+    update_system_outputs!(component, x)
     return outputs_and_jacobian(component)
 end
 

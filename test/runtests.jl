@@ -1,4 +1,5 @@
 using CoupledSystems
+using ForwardDiff
 using Test
 
 @testset "ExplicitComponent" begin
@@ -249,8 +250,10 @@ end
 
     sys = ExplicitSystem(x0, y0, components, component_mapping, output_mapping)
 
+    y = zeros(2)
+    dydx = zeros(2,5)
+
     x = rand(5)
-    y = rand(2)
     y1 = outputs!(sys, y, x)
     y2 = outputs!(sys, x)
     y3 = outputs!!(sys, x)
@@ -259,7 +262,6 @@ end
     @test y1 == y2 == y3 == y4 == y5
 
     x = rand(5)
-    y = rand(2)
     dydx1 = jacobian!(sys, dydx, x)
     dydx2 = jacobian!(sys, x)
     dydx3 = jacobian!!(sys, x)
@@ -267,6 +269,7 @@ end
     dydx5 = jacobian(sys, x)
     @test dydx1 == dydx2 == dydx3 == dydx4 == dydx5
 
+    x = rand(5)
     y1, dydx1 = outputs_and_jacobian!(sys, y, dydx, x)
     y2, dydx2 = outputs_and_jacobian!(sys, x)
     y3, dydx3 = outputs_and_jacobian!!(sys, x)
@@ -621,7 +624,6 @@ end
     @test isapprox(dydx1, dydx4, atol=1e-6)
     @test isapprox(dydx1, dydx5, atol=1e-6)
 
-    x = -rand(3)
     y1, dydx1 = outputs_and_jacobian!(xcomp, y, dydx, x)
     y2, dydx2 = outputs_and_jacobian!(xcomp, x)
     y3, dydx3 = outputs_and_jacobian!!(xcomp, x)
@@ -704,7 +706,7 @@ end
     components = (icomp1, icomp2, icomp3)
     component_mapping = (mapping1, mapping2, mapping3)
 
-    sys = ImplicitSystem(x0, components, component_mapping, output_mapping)
+    sys = ImplicitSystem(x0, components, component_mapping)
 
     r = zeros(4)
     drdx = zeros(4, 5)
