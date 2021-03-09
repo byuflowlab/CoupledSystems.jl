@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Getting Started · CoupledSystems.jl</title><link href="https://fonts.googleapis.com/css?family=Lato|Roboto+Mono" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit">CoupledSystems.jl</span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li class="is-active"><a class="tocitem" href>Getting Started</a><ul class="internal"><li><a class="tocitem" href="#Constructing-Explicit-Components"><span>Constructing Explicit Components</span></a></li><li><a class="tocitem" href="#Converting-Explicit-Components-into-Implicit-Components"><span>Converting Explicit Components into Implicit Components</span></a></li><li><a class="tocitem" href="#Combining-Implicit-Components-into-an-Implicit-System"><span>Combining Implicit Components into an Implicit System</span></a></li><li><a class="tocitem" href="#Coupling-an-Implicit-Component-with-a-Solver-to-Construct-an-Explicit-Component"><span>Coupling an Implicit Component with a Solver to Construct an Explicit Component</span></a></li><li><a class="tocitem" href="#Combining-Explicit-Components-into-an-Explicit-System"><span>Combining Explicit Components into an Explicit System</span></a></li><li><a class="tocitem" href="#Querying-Explicit-Components-and/or-Systems"><span>Querying Explicit Components and/or Systems</span></a></li><li><a class="tocitem" href="#Verifying-Derivatives"><span>Verifying Derivatives</span></a></li><li><a class="tocitem" href="#Final-Notes"><span>Final Notes</span></a></li></ul></li><li><a class="tocitem" href="../theory/">Theory</a></li><li><a class="tocitem" href="../library/">Library</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Getting Started</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Getting Started</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/byuflowlab/CoupledSystems.jl/blob/master/docs/src/guide.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Getting-Started:-The-Sellar-Problem"><a class="docs-heading-anchor" href="#Getting-Started:-The-Sellar-Problem">Getting Started: The Sellar Problem</a><a id="Getting-Started:-The-Sellar-Problem-1"></a><a class="docs-heading-anchor-permalink" href="#Getting-Started:-The-Sellar-Problem" title="Permalink"></a></h1><p>The Sellar problem is is a two-discipline toy problem introduced by R.S. Sellar, S.M. Batill, and J.E. Renaud in &quot;Response Surface Based, Concurrent Subspace Optimization for Multidisciplinary System Design&quot;.  The problem itself is non-physical, but it provides a simple example with which to demonstrate multidisciplinary coupling and analysis capabilities.</p><p>Each of the two disciplines in the Sellar problem consists of a single explicit equation.  The output of each discipline is used as an input to the other discipline.  Together, the two disciplines form a nonlinear system of equations which must be solved in order to obtain valid outputs.  The outputs of the coupled system of equations are used to construct objective and constraint functions for an optimization. The following is an XDSM diagram of the problem structure.</p><p><img src="../sellar-xdsm1.svg" alt/></p><p>Our goal is to manipulate this problem in order to create a single explicit function/component which defines the objective and constraint values as well as their derivatives with respect to the design variables (the inputs).  In other words, we would like to take the diagram shown above and convert it to the following one-component system, and propagate derivatives while doing so.</p><p><img src="../sellar-xdsm-final.svg" alt/></p><h2 id="Constructing-Explicit-Components"><a class="docs-heading-anchor" href="#Constructing-Explicit-Components">Constructing Explicit Components</a><a id="Constructing-Explicit-Components-1"></a><a class="docs-heading-anchor-permalink" href="#Constructing-Explicit-Components" title="Permalink"></a></h2><p>Let&#39;s start by loading the package, and then constructing each of the components of the Sellar problem individually.  Since all of the components (when considered in isolation) are explicit, we model them as such.</p><pre><code class="language-julia">using CoupledSystems
+
+# --- Define Discipline 1 --- #
+
+# vector valued input-output function
+function f_d1(outputs, inputs)
+    z1 = inputs[1]
+    z2 = inputs[2]
+    x = inputs[3]
+    y2 = inputs[4]
+    outputs[1] = z1^2 + z2 + x - 0.2*y2
+end
+
+# define arrays that define size and type of inputs and outputs
+inputs_d1 = zeros(4)
+outputs_d1 = zeros(1)
+
+# construct explicit component for discipline 1
+d1 = ExplicitComponent(inputs_d1, outputs_d1; f=f_d1, deriv=ForwardFD())
+
+# --- Define Discipline 2 --- #
+
+# vector valued input-output function
+function f_d2(outputs, inputs)
+    z1 = inputs[1]
+    z2 = inputs[2]
+    y1 = inputs[3]
+    outputs[1] = sqrt(y1) + z1 + z2
+end
+
+# define arrays that define size and type of inputs and outputs
+inputs_d2 = zeros(3)
+outputs_d2 = zeros(1)
+
+# construct explicit component for discipline 2
+d2 = ExplicitComponent(inputs_d2, outputs_d2; f=f_d2, deriv=ForwardFD())
+
+# --- Define Objective --- #
+
+function f_obj(outputs, inputs)
+    z1 = inputs[1]
+    x = inputs[2]
+    y1 = inputs[3]
+    y2 = inputs[4]
+    outputs[1] = x^2 + z1 + y1 + exp(-y2) # objective
+end
+
+# define arrays that define size and type of inputs and outputs
+inputs_obj = zeros(4)
+outputs_obj = zeros(1)
+
+# construct explicit component for objective
+obj = ExplicitComponent(inputs_obj, outputs_obj; f=f_obj, deriv=ForwardFD())
+
+# --- Define Constraint 1 --- #
+
+function f_c1(outputs, inputs)
+    y1 = inputs[1]
+    outputs[1] = 3.16 - y1
+end
+
+# define arrays that define size and type of inputs and outputs
+inputs_c1 = zeros(1)
+outputs_c1 = zeros(1)
+
+# construct explicit component for constraint 1
+c1 = ExplicitComponent(inputs_c1, outputs_c1; f=f_c1, deriv=ForwardFD())
+
+# --- Define Constraint 2 --- #
+
+function f_c2(outputs, inputs)
+    y2 = inputs[1]
+    outputs[1] = y2 - 24.0
+end
+
+# define arrays that define size and type of inputs and outputs
+inputs_c2 = zeros(1)
+outputs_c2 = zeros(1)
+
+# construct explicit component for constraint 2
+c2 = ExplicitComponent(inputs_c2, outputs_c2; f=f_c2, deriv=ForwardFD())</code></pre><p>Note that rather than providing the jacobians of each function directly, we use forward finite differencing to estimate the jacobian of each component. This is the default behavior of CoupledSystems.  Other provided jacobian calculation methods include <a href="../library/#CoupledSystems.CentralFD"><code>CentralFD()</code></a>, <a href="../library/#CoupledSystems.ComplexFD"><code>ComplexFD()</code></a>, <a href="../library/#CoupledSystems.ForwardAD"><code>ForwardAD()</code></a>, and <a href="../library/#CoupledSystems.ReverseAD"><code>ReverseAD()</code></a>.  It&#39;s also possible to provide your own jacobian function through the <code>df</code> keyword argument.</p><h2 id="Converting-Explicit-Components-into-Implicit-Components"><a class="docs-heading-anchor" href="#Converting-Explicit-Components-into-Implicit-Components">Converting Explicit Components into Implicit Components</a><a id="Converting-Explicit-Components-into-Implicit-Components-1"></a><a class="docs-heading-anchor-permalink" href="#Converting-Explicit-Components-into-Implicit-Components" title="Permalink"></a></h2><p>We would like to be able to converge all interdependent components simultaneously.  This can be done with the help of a nonlinear solver.  Let&#39;s go ahead and add one to the XDSM diagram.</p><p><img src="../sellar-xdsm2.svg" alt/></p><p>Notice that the two disciplinary components have been converted to implicit components so that they can provide residual vectors to the nonlinear solver.  The nonlinear solver then drives these residuals to zero and provides the final states/outputs <code>y_1</code> and <code>y_2</code> to the rest of the system.  Let&#39;s go ahead and convert our explicit components to implicit components so that they can be used to provide residual vectors (and associated derivatives) to the nonlinear solver.</p><pre><code class="language-julia"># convert discipline 1 into an implicit component
+d1i = ImplicitComponent(d1)
+
+# convert discipline 2 into an implicit component
+d2i = ImplicitComponent(d2)</code></pre><h2 id="Combining-Implicit-Components-into-an-Implicit-System"><a class="docs-heading-anchor" href="#Combining-Implicit-Components-into-an-Implicit-System">Combining Implicit Components into an Implicit System</a><a id="Combining-Implicit-Components-into-an-Implicit-System-1"></a><a class="docs-heading-anchor-permalink" href="#Combining-Implicit-Components-into-an-Implicit-System" title="Permalink"></a></h2><p>At this point we combine the two implicit components to create a single set of residual equations.  The state variables (which are also the system outputs) are also combined.</p><pre><code class="language-julia"># define input mapping for discipline 1
+mapping_1 = [
+    (0, 1), # first input (z1) is index 1 of the system inputs
+    (0, 2), # second input (z2) is index 2 of the system inputs
+    (0, 3), # third input (x) is index 3 of the system inputs
+    (2, 1), # fourth input (y2) is the first output from discipline 2
+]
+
+# define input mapping for discipline 2
+mapping_2 = [
+    (0, 1), # first input (z1) is index 1 of the system inputs
+    (0, 2), # second input (z2) is index 2 of the system inputs
+    (1, 1), # third input is the first output from the first component
+]
+
+# array that defines size and types of the inputs
+inputs_isys = zeros(3)
+
+# components in the implicit system
+components_isys = [d1i, d2i]
+
+# input mapping for components in the implicit system
+component_mapping_isys = [mapping_1, mapping_2]
+
+# implicit system construction
+isys = ImplicitSystem(inputs_isys, components_isys, component_mapping_isys)</code></pre><p>Let&#39;s now update the XDSM diagram to account for the newly combined system.</p><p><img src="../sellar-xdsm3.svg" alt/></p><h2 id="Coupling-an-Implicit-Component-with-a-Solver-to-Construct-an-Explicit-Component"><a class="docs-heading-anchor" href="#Coupling-an-Implicit-Component-with-a-Solver-to-Construct-an-Explicit-Component">Coupling an Implicit Component with a Solver to Construct an Explicit Component</a><a id="Coupling-an-Implicit-Component-with-a-Solver-to-Construct-an-Explicit-Component-1"></a><a class="docs-heading-anchor-permalink" href="#Coupling-an-Implicit-Component-with-a-Solver-to-Construct-an-Explicit-Component" title="Permalink"></a></h2><p>Now that we have a single implicit system of equations, we can couple it with the nonlinear solver, which will effectively convert it into an explicit component.  The outputs of the resulting explicit component will be equal to the outputs of each of the implicit system&#39;s subcomponents, concatenated.</p><pre><code class="language-julia">mda = ExplicitComponent(isys, solver=Newton())</code></pre><p>Here is the XDSM diagram of the Sellar problem after combining the implicit system of equations with the nonlinear solver to create an explicit component.</p><p><img src="../sellar-xdsm4.svg" alt/></p><h2 id="Combining-Explicit-Components-into-an-Explicit-System"><a class="docs-heading-anchor" href="#Combining-Explicit-Components-into-an-Explicit-System">Combining Explicit Components into an Explicit System</a><a id="Combining-Explicit-Components-into-an-Explicit-System-1"></a><a class="docs-heading-anchor-permalink" href="#Combining-Explicit-Components-into-an-Explicit-System" title="Permalink"></a></h2><p>Since there are no longer any model interdependencies, each component may be called sequentially to generate the final output.  We can express this sequence of explicit components as a single explicit system with its own set of inputs and outputs</p><pre><code class="language-julia"># define input mapping for the multidisciplinary analysis
+mapping_mda = [
+    (0, 1), # first input (z1) is index 1 of the system inputs
+    (0, 2), # second input (z2) is index 2 of the system inputs
+    (0, 3), # third input (x) is index 3 of the system inputs
+]
+
+# define input mapping for the objective
+mapping_obj = [
+    (0, 1), # first input (z1) is index 1 of the system inputs
+    (0, 3), # second input (x) is index 3 of the system inputs
+    (1, 1), # third input (y1) is the first output from the multidisciplinary analysis
+    (1, 2), # fourth input (y2) is the second output from the multidisciplinary analysis
+]
+
+# define input mapping for the first constraint
+mapping_g1 = [
+    (1, 1), # first input (y1) is the first output from the multidisciplinary analysis
+]
+
+# define input mapping for the second constraint
+mapping_g2 = [
+    (1, 2), # first input (y2) is the second output from the multidisciplinary analysis
+]
+
+# array defining size and type of inputs to the explicit system
+inputs_sellar = zeros(3)
+
+# components in the explicit system
+components_sellar = [mda, obj, c1, c2]
+
+# input mapping for each of the components
+component_mapping_sellar = [mapping_mda, mapping_obj, mapping_g1, mapping_g2]
+
+# array defining size and type of outputs from the explicit system
+outputs_sellar = zeros(3)
+
+# output mapping for the combined system
+output_mapping_sellar = [
+    (2, 1), # first output is the first output from the second component
+    (3, 1), # second output is the first output from the third component
+    (4, 1), # third output is the first output from the fourth component
+]
+
+sellar = ExplicitSystem(inputs_sellar, outputs_sellar, components_sellar,
+    component_mapping_sellar, output_mapping_sellar; mode=Reverse())</code></pre><p>At this point we have achieved our goal of representing the Sellar problem as an explicit one-component system.</p><p><img src="../sellar-xdsm-final.svg" alt/></p><h2 id="Querying-Explicit-Components-and/or-Systems"><a class="docs-heading-anchor" href="#Querying-Explicit-Components-and/or-Systems">Querying Explicit Components and/or Systems</a><a id="Querying-Explicit-Components-and/or-Systems-1"></a><a class="docs-heading-anchor-permalink" href="#Querying-Explicit-Components-and/or-Systems" title="Permalink"></a></h2><p>Now that our entire system has been reduced down into a single explicit component, we can easily obtain the outputs and their derivatives with respect to the design variables for any set of design variables.</p><pre><code class="language-julia"># inputs to the Sellar problem
+x = rand(3)
+
+# outputs from the Sellar problem
+y = outputs!(sellar, x)
+
+# jacobian of the outputs with respect to the inputs
+dydx = jacobian!(sellar, x)
+
+# combined evaluation of outputs and jacobian
+y, dydx = outputs_and_jacobian!(sellar, x)</code></pre><h2 id="Verifying-Derivatives"><a class="docs-heading-anchor" href="#Verifying-Derivatives">Verifying Derivatives</a><a id="Verifying-Derivatives-1"></a><a class="docs-heading-anchor-permalink" href="#Verifying-Derivatives" title="Permalink"></a></h2><p>Derivatives can be verified easily using finite differencing.</p><pre><code class="language-julia">using FiniteDiff
+
+# Verify using forward finite differencing
+f = (x) -&gt; outputs(sellar, x)
+dydx_fd = FiniteDiff.finite_difference_jacobian(f, x)
+println(&quot;Maximum Error: &quot;, maximum(abs.(dydx - dydx_fd)))</code></pre><pre class="documenter-example-output">Maximum Error: 2.226210929157091e-6</pre><p>For an even better derivative check, the jacobians can be verified against exact derivatives computed using forward mode automatic differentiation.</p><pre><code class="language-julia">using ForwardDiff
+
+# Verify using forward mode automatic differentiation
+dydx_ad = ForwardDiff.jacobian(f, x)
+error = dydx - dydx_ad
+println(&quot;Maximum Error: &quot;, maximum(abs.(dydx - dydx_ad)))</code></pre><pre class="documenter-example-output">Maximum Error: 2.744059914849828e-7</pre><p>Since this package uses analytic expressions to propagate derivatives, the derivatives computed by this package combined with finite differencing are actually a couple orders of magnitude more accurate than those computed using finite differencing alone.</p><pre><code class="language-julia">error = dydx - dydx_ad
+error_fd = dydx_fd - dydx_ad
+println(&quot;Maximum Error using Finite Differencing: &quot;,
+    maximum(abs.(dydx_fd - dydx_ad)))
+println(&quot;Maximum Error using Finite Differencing and CoupledSystems: &quot;,
+    maximum(abs.(dydx - dydx_ad)))</code></pre><pre class="documenter-example-output">Maximum Error using Finite Differencing: 2.2281609963759053e-6
+Maximum Error using Finite Differencing and CoupledSystems: 2.744059914849828e-7</pre><h2 id="Final-Notes"><a class="docs-heading-anchor" href="#Final-Notes">Final Notes</a><a id="Final-Notes-1"></a><a class="docs-heading-anchor-permalink" href="#Final-Notes" title="Permalink"></a></h2><p>While the intended use of CoupledSystems is typically to reduce an arbitrarily complex system down to a single explicit component, there are multiple ways in which this may be accomplished.  For example, an alternative approach to modeling the Sellar problem would be to construct a single implicit system from all components and then couple that system with a nonlinear solver (which is effectively the approach used in OpenMDAO).  </p><p>Additionally, there are multiple ways in which any given problem may be divided up into components.  For example, we could have defined the objective and constraint functions as a single vector-valued function rather than three.  Ultimately, while these choices may seem arbitrary, different combinations of choices may be more computationally efficient than others, especially for derivative computations.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../theory/">Theory »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Tuesday 9 March 2021 03:31">Tuesday 9 March 2021</span>. Using Julia version 1.5.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
