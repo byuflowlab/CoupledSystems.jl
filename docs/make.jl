@@ -15,4 +15,5 @@ makedocs(;
 
 deploydocs(
     repo = "github.com/byuflowlab/CoupledSystems.jl.git",
+    devbranch = "main",
 )
