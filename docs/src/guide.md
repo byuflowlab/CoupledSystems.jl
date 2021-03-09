@@ -279,7 +279,7 @@ println("Maximum Error: ", maximum(abs.(dydx - dydx_ad)))
 nothing #hide
 ```
 
-Since this package uses analytic expressions to propagate derivatives, the derivatives computed by this package combined with finite differencing are actually a couple orders of magnitude more accurate than those computed using finite differencing alone.
+Since this package uses analytic expressions to propagate derivatives, the derivatives computed by this package combined with finite differencing are actually more accurate than those computed using finite differencing alone.
 
 ```@example guide
 error = dydx - dydx_ad
