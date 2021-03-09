@@ -640,6 +640,8 @@ end
 
 @testset "ImplicitSystem" begin
 
+    # We use an explicit system here, modified to become implicit
+
     # System Inputs
     xsys = zeros(5)
 
@@ -654,7 +656,8 @@ end
         (0,1), # system inputs, index 1
         (0,2), # system inputs, index 2
         ]
-    comp1 = ExplicitComponent(x1, y1; f=f1!, deriv=ForwardAD())
+    xcomp1 = ExplicitComponent(x1, y1; f=f1!, deriv=ForwardAD())
+    icomp1 = ImplicitComponent(xcomp1)
 
     # Second Component: Quadratic
     f2! = function(y, x)
@@ -669,7 +672,8 @@ end
         (0,5), # system inputs, index 5
         (1,1), # component 1 outputs, index 1
     ]
-    comp2 = ExplicitComponent(x2, y2; f=f2!, deriv=ForwardAD())
+    xcomp2 = ExplicitComponent(x2, y2; f=f2!, deriv=ForwardAD())
+    icomp2 = ImplicitComponent(xcomp2)
 
     # Third Component: Trigometric Functions
     f3! = function(y, x)
@@ -683,7 +687,8 @@ end
         (1,1), # component 1 outputs, index 1
         (2,1), # component 2 outputs, index 2
     ]
-    comp3 = ExplicitComponent(x3, y3; f=f3!, deriv=ForwardAD())
+    xcomp3 = ExplicitComponent(x3, y3; f=f3!, deriv=ForwardAD())
+    icomp3 = ImplicitComponent(xcomp3)
 
     # System Outputs
     ysys = zeros(2)
@@ -696,71 +701,101 @@ end
     x0 = xsys
     y0 = ysys
     r0 = copy(ysys)
-    components = (comp1, comp2, comp3)
+    components = (icomp1, icomp2, icomp3)
     component_mapping = (mapping1, mapping2, mapping3)
 
-    sys = ImplicitSystem(x0, y0, r0, components, component_mapping, output_mapping)
+    sys = ImplicitSystem(x0, components, component_mapping, output_mapping)
 
-    r = zeros(2)
-    drdx = zeros(2, 5)
-    drdy = zeros(2, 2)
+    r = zeros(4)
+    drdx = zeros(4, 5)
+    drdy = zeros(4, 4)
 
     x = rand(5)
-    y = rand(2)
+    y = rand(4)
     r1 = residuals!(sys, r, x, y)
     r2 = residuals!(sys, x, y)
     r3 = residuals!!(sys, x, y)
     r4 = residuals!!!(sys, x, y)
     r5 = residuals(sys, x, y)
-    @test r1 == r2 == r3 == r4 == r5
+    @test isapprox(r1, r2)
+    @test isapprox(r1, r3)
+    @test isapprox(r1, r4)
+    @test isapprox(r1, r5)
 
     x = rand(5)
-    y = rand(2)
+    y = rand(4)
     drdx1 = residual_input_jacobian!(sys, drdx, x, y)
     drdx2 = residual_input_jacobian!(sys, x, y)
     drdx3 = residual_input_jacobian!!(sys, x, y)
     drdx4 = residual_input_jacobian!!!(sys, x, y)
     drdx5 = residual_input_jacobian(sys, x, y)
-    @test drdx1 == drdx2 == drdx3 == drdx4 == drdx5
+    @test isapprox(drdx1, drdx2)
+    @test isapprox(drdx1, drdx3)
+    @test isapprox(drdx1, drdx4)
+    @test isapprox(drdx1, drdx5)
 
     x = rand(5)
-    y = rand(2)
+    y = rand(4)
     drdy1 = residual_output_jacobian!(sys, drdy, x, y)
     drdy2 = residual_output_jacobian!(sys, x, y)
     drdy3 = residual_output_jacobian!!(sys, x, y)
     drdy4 = residual_output_jacobian!!!(sys, x, y)
     drdy5 = residual_output_jacobian(sys, x, y)
-    @test drdy1 == drdy2 == drdy3 == drdy4 == drdy5
+    @test isapprox(drdy1, drdy2)
+    @test isapprox(drdy1, drdy3)
+    @test isapprox(drdy1, drdy4)
+    @test isapprox(drdy1, drdy5)
 
     x = rand(5)
-    y = rand(2)
+    y = rand(4)
     r1, drdx1 = residuals_and_input_jacobian!(sys, r, drdx, x, y)
     r2, drdx2 = residuals_and_input_jacobian!(sys, x, y)
     r3, drdx3 = residuals_and_input_jacobian!!(sys, x, y)
     r4, drdx4 = residuals_and_input_jacobian!!!(sys, x, y)
     r5, drdx5 = residuals_and_input_jacobian(sys, x, y)
-    @test r1 == r2 == r3 == r4 == r5
-    @test drdx1 == drdx2 == drdx3 == drdx4 == drdx5
+    @test isapprox(r1, r2)
+    @test isapprox(r1, r3)
+    @test isapprox(r1, r4)
+    @test isapprox(r1, r5)
+    @test isapprox(drdx1, drdx2)
+    @test isapprox(drdx1, drdx3)
+    @test isapprox(drdx1, drdx4)
+    @test isapprox(drdx1, drdx5)
 
     x = rand(5)
-    y = rand(2)
+    y = rand(4)
     r1, drdy1 = residuals_and_output_jacobian!(sys, r, drdy, x, y)
     r2, drdy2 = residuals_and_output_jacobian!(sys, x, y)
     r3, drdy3 = residuals_and_output_jacobian!!(sys, x, y)
     r4, drdy4 = residuals_and_output_jacobian!!!(sys, x, y)
     r5, drdy5 = residuals_and_output_jacobian(sys, x, y)
-    @test r1 == r2 == r3 == r4 == r5
-    @test drdy1 == drdy2 == drdy3 == drdy4 == drdy5
+    @test isapprox(r1, r2)
+    @test isapprox(r1, r3)
+    @test isapprox(r1, r4)
+    @test isapprox(r1, r5)
+    @test isapprox(drdy1, drdy2)
+    @test isapprox(drdy1, drdy3)
+    @test isapprox(drdy1, drdy4)
+    @test isapprox(drdy1, drdy5)
 
     x = rand(5)
-    y = rand(2)
+    y = rand(4)
     r1, drdx1, drdy1 = residuals_and_jacobians!(sys, r, drdx, drdy, x, y)
     r2, drdx2, drdy2 = residuals_and_jacobians!(sys, x, y)
     r3, drdx3, drdy3 = residuals_and_jacobians!!(sys, x, y)
     r4, drdx4, drdy4 = residuals_and_jacobians!!!(sys, x, y)
     r5, drdx5, drdy5 = residuals_and_jacobians(sys, x, y)
-    @test r1 == r2 == r3 == r4 == r5
-    @test drdx1 == drdx2 == drdx3 == drdx4 == drdx5
-    @test drdy1 == drdy2 == drdy3 == drdy4 == drdy5
+    @test isapprox(r1, r2)
+    @test isapprox(r1, r3)
+    @test isapprox(r1, r4)
+    @test isapprox(r1, r5)
+    @test isapprox(drdx1, drdx2)
+    @test isapprox(drdx1, drdx3)
+    @test isapprox(drdx1, drdx4)
+    @test isapprox(drdx1, drdx5)
+    @test isapprox(drdy1, drdy2)
+    @test isapprox(drdy1, drdy3)
+    @test isapprox(drdy1, drdy4)
+    @test isapprox(drdy1, drdy5)
 
 end

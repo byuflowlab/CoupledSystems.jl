@@ -1,5 +1,22 @@
-abstract type AbstractComponent en
+"""
+    AbstractComponent
+
+Supertype for all components
+"""
+abstract type AbstractComponent end
+
+"""
+    AbstractExplicitComponent <: AbstractComponent
+
+Supertype for components defined by the vector valued output function `y = f(x)`
+"""
 abstract type AbstractExplicitComponent <: AbstractComponent end
+
+"""
+    AbstractImplicitComponent <: AbstractComponent
+
+Supertype for components defined by the vector valued residual function `0 = f(x, y)`
+"""
 abstract type AbstractImplicitComponent <: AbstractComponent end
 
 """
@@ -105,10 +122,7 @@ components.
 
 # Fields
  - `components::TC`: Collection of components, in preferred calling order
- - `input_mapping::Vector{NTuple{2,Vector{Int}}}`:
- - `component_output_mapping::Vector{Vector{NTuple{2,Vector{Int}}}}`:
  - `component_input_mapping::Vector{Vector{NTuple{2,Int}}}`:
- - `output_mapping::Vector{NTuple{2,Int}}`:
  - `x_f::TX`: `x` used to evaluate `f`
  - `y_f::TY`: `y` used to evaluate `f`
  - `x_dfdx::TX`: `x` used to evaluate `dfdx`
@@ -119,14 +133,10 @@ components.
  - `drdx::TDRX`: cache for residual jacobian with respect to `x`
  - `drdy::TDRY`: cache for residual jacobian with respect to `y`
  - `idx::Vector{Int}`: Index used for accessing outputs/residuals for each component
- - `mode::TD`: Direction in which to compute the jacobians (`Forward()` or `Reverse()`)
 """
-struct ImplicitSystem{TC, TX, TY, TR, TDRX, TDRY, TD} <: AbstractImplicitComponent
+struct ImplicitSystem{TC, TX, TY, TR, TDRX, TDRY} <: AbstractImplicitComponent
     components::TC
-    input_mapping::Vector{NTuple{2,Vector{Int}}}
-    component_output_mapping::Vector{Vector{NTuple{2,Vector{Int}}}}
     component_input_mapping::Vector{Vector{NTuple{2,Int}}}
-    output_mapping::Vector{NTuple{2,Int}}
     x_f::TX
     y_f::TY
     x_dfdx::TX
@@ -137,7 +147,6 @@ struct ImplicitSystem{TC, TX, TY, TR, TDRX, TDRY, TD} <: AbstractImplicitCompone
     drdx::TDRX
     drdy::TDRY
     idx::Vector{Int}
-    mode::TD
 end
 
 # Functions for AbstractComponent
@@ -642,7 +651,6 @@ function subcomponent_outputs!(component, xsub, ysub, x)
     return xsub, ysub
 end
 
-
 """
     subcomponent_outputs!(component::ExplicitSystem, x)
 
@@ -790,11 +798,11 @@ function subcomponent_outputs_and_jacobians!(component::ExplicitSystem, x)
                 xsub[ix] = outputs(subcomponents[jc])[jy]
             end
         end
-        update_df = xsub != subcomponent.x_dfdx
+        update_df = xsub != subcomponent.x_df
         # update outputs and jacobians for current subcomponent (if necessary)
-        if update_f && update_dfdx
+        if update_f && update_df
             outputs_and_jacobian!!(subcomponent, xsub)
-        elseif update_dfdx
+        elseif update_df
             jacobian!!(subcomponent, xsub)
         elseif update_f
             residuals!!(subcomponent, xsub)
@@ -848,12 +856,12 @@ Update the outputs in `component` given the inputs `x`.
 """
 function update_system_outputs!(component, x)
     # update system outputs
-    for iy = 1:length(y)
+    for iy = 1:length(component.y)
         jc, jy = component.output_mapping[iy]
         if jc == 0
-            y[iy] = x[jy]
+            component.y[iy] = x[jy]
         else
-            y[iy] = outputs(component.components[jc])[jy]
+            component.y[iy] = outputs(component.components[jc])[jy]
         end
     end
     return outputs(component)
@@ -927,9 +935,7 @@ This function is called recursively to create new branches as necessary.
 If `dsub` is not provided, jacobian matrices will be taken from each subcomponent's
 internal storage.
 """
-function forward_mode_jacobian_branch!(system, dydx, ix, cprod, jc, jx,
-    dsub=nothing)
-
+function forward_mode_jacobian_branch!(system, dydx, ix, cprod, jc, jx, dsub=nothing)
     # extract subcomponent
     subcomponent = system.components[jc]
     # loop through outputs from this subcomponent
@@ -971,7 +977,7 @@ Fills in the system jacobian matrix `dydx` using the chain rule in reverse mode.
 If `dsub` is not provided, jacobian matrices will be taken from each subcomponent's
 internal storage.
 """
-function reverse_mode_jacobian!(component::ExplicitSystem, dydx, dsub = nothing)
+function reverse_mode_jacobian!(system::ExplicitSystem, dydx, dsub = nothing)
 
     # get output dimensions
     ny, nx = size(dydx)
@@ -984,7 +990,7 @@ function reverse_mode_jacobian!(component::ExplicitSystem, dydx, dsub = nothing)
         # start new chain rule product
         cprod = 1
         # get the source of this system output
-        jc, jy = component.output_mapping[iy]
+        jc, jy = system.output_mapping[iy]
         # check the identity of the source
         if iszero(jc)
             # source is the system input
@@ -993,7 +999,7 @@ function reverse_mode_jacobian!(component::ExplicitSystem, dydx, dsub = nothing)
             dydx[iy, ix] += cprod
         else
             # source is a subcomponent, add its contribution to the jacobian
-            reverse_mode_jacobian_branch!(component, dydx, iy, cprod, jc, jy, dsub)
+            reverse_mode_jacobian_branch!(system, dydx, iy, cprod, jc, jy, dsub)
         end
     end
 
@@ -1031,7 +1037,7 @@ function reverse_mode_jacobian_branch!(system, dydx, iy, cprod, jc, jy, dsub=not
             # input corresponds to system input
             ix = new_jy
             # add chain rule product to corresponding slot in jacobian
-            dydx[iy, ix] = new_cprod
+            dydx[iy, ix] += new_cprod
         elseif iszero(new_cprod)
             # stop computing branch because there is nothing to add
         else
@@ -1098,7 +1104,7 @@ This does *not* update any of the values stored in `component`
 function residuals!(component::ImplicitSystem, r, xsub, ysub, rsub, x, y)
     subcomponent_residuals!(component, xsub, ysub, rsub, x, y)
     update_system_residuals!(component, r, rsub)
-    return y
+    return r
 end
 
 """
@@ -1312,7 +1318,7 @@ function residuals_and_input_jacobian(component::ImplicitComponent, x, y)
     return residuals_and_input_jacobian!(component, r, drdx, x, y)
 end
 
-function residuals_and_input_jacobian!(component::ImplicitSystem, x, y)
+function residuals_and_input_jacobian(component::ImplicitSystem, x, y)
     r = similar(component.r, promote_type(eltype(component.r), eltype(x), eltype(y)))
     drdx = similar(component.drdx, promote_type(eltype(component.drdx), eltype(x), eltype(y)))
     xsub = [similar(comp.x_f, promote_type(eltype(comp.x_f), eltype(x), eltype(y))) for comp in component.components]
@@ -1366,13 +1372,13 @@ function residuals_and_input_jacobian!(component::ImplicitSystem, r, drdx, xsub,
 end
 
 """
-    residuals_and_input_jacobian!(component::ImplicitComponent, x, y)
+    residuals_and_input_jacobian!(component::AbstractImplicitComponent, x, y)
 
 Evaluate the residual and jacobian of the residuals with respect to the inputs.
 
 Return the result and store in `component.r` and `component.drdx`
 """
-function residuals_and_input_jacobian!(component::ImplicitComponent, x, y)
+function residuals_and_input_jacobian!(component::AbstractImplicitComponent, x, y)
     if  (x != component.x_f) || (y != component.y_f) && (x != component.x_dfdx) || (y != component.y_dfdx)
         residuals_and_input_jacobian!!(component, x, y)
     elseif (x != component.x_f) || (y != component.y_f)
@@ -1464,7 +1470,7 @@ function residual_output_jacobian(component::ImplicitSystem, x, y)
     drdy = similar(component.drdy, promote_type(eltype(component.drdx), eltype(x), eltype(y)))
     xsub = [similar(comp.x_f, promote_type(eltype(comp.x_f), eltype(x), eltype(y))) for comp in component.components]
     ysub = [similar(comp.y_f, promote_type(eltype(comp.y_f), eltype(x), eltype(y))) for comp in component.components]
-    dxsub = [similar(comp.dxdy, promote_type(eltype(comp.drdx), eltype(x), eltype(y))) for comp in component.components]
+    dxsub = [similar(comp.drdx, promote_type(eltype(comp.drdx), eltype(x), eltype(y))) for comp in component.components]
     dysub = [similar(comp.drdy, promote_type(eltype(comp.drdy), eltype(x), eltype(y))) for comp in component.components]
     return residual_output_jacobian!(component, drdy, xsub, ysub, dxsub, dysub, x, y)
 end
@@ -1487,7 +1493,7 @@ end
 function residual_output_jacobian!(component::ImplicitSystem, drdy, x, y)
     xsub = [similar(comp.x_f, promote_type(eltype(comp.x_f), eltype(x), eltype(y))) for comp in component.components]
     ysub = [similar(comp.y_f, promote_type(eltype(comp.y_f), eltype(x), eltype(y))) for comp in component.components]
-    dxsub = [similar(comp.dxdy, promote_type(eltype(comp.drdx), eltype(x), eltype(y))) for comp in component.components]
+    dxsub = [similar(comp.drdx, promote_type(eltype(comp.drdx), eltype(x), eltype(y))) for comp in component.components]
     dysub = [similar(comp.drdy, promote_type(eltype(comp.drdy), eltype(x), eltype(y))) for comp in component.components]
     residual_output_jacobian!(component, drdy, xsub, ysub, dxsub, dysub, x, y)
     return drdy
@@ -1596,7 +1602,7 @@ function residuals_and_output_jacobian(component::ImplicitComponent, x, y)
     return residuals_and_output_jacobian!(component, r, drdy, x, y)
 end
 
-function residuals_and_output_jacobian!(component::ImplicitSystem, x, y)
+function residuals_and_output_jacobian(component::ImplicitSystem, x, y)
     r = similar(component.r, promote_type(eltype(component.r), eltype(x), eltype(y)))
     drdy = similar(component.drdy, promote_type(eltype(component.drdy), eltype(x), eltype(y)))
     xsub = [similar(comp.x_f, promote_type(eltype(comp.x_f), eltype(x), eltype(y))) for comp in component.components]
@@ -1749,7 +1755,7 @@ function residuals_and_jacobians(component::ImplicitComponent, x, y)
     return residuals_and_jacobians!(component, r, drdx, drdy, x, y)
 end
 
-function residuals_and_jacobians!(component::ImplicitSystem, x, y)
+function residuals_and_jacobians(component::ImplicitSystem, x, y)
     r = similar(component.r, promote_type(eltype(component.r), eltype(x), eltype(y)))
     drdx = similar(component.drdx, promote_type(eltype(component.drdx), eltype(x), eltype(y)))
     drdy = similar(component.drdy, promote_type(eltype(component.drdy), eltype(x), eltype(y)))
@@ -1760,7 +1766,7 @@ function residuals_and_jacobians!(component::ImplicitSystem, x, y)
     dysub = [similar(comp.drdy, promote_type(eltype(comp.drdy), eltype(x), eltype(y))) for comp in component.components]
     residuals_and_jacobians!(component, r, drdx, drdy, xsub, ysub, rsub,
         dxsub, dysub, x, y)
-    return r, dydx, drdy
+    return r, drdx, drdy
 end
 
 """
@@ -1786,7 +1792,7 @@ function residuals_and_jacobians!(component::ImplicitSystem, r, drdx, drdy, x, y
     dysub = [similar(comp.drdy, promote_type(eltype(comp.drdy), eltype(x), eltype(y))) for comp in component.components]
     residuals_and_jacobians!(component, r, drdx, drdy, xsub, ysub, rsub,
         dxsub, dysub, x, y)
-    return r, dydx, drdy
+    return r, drdx, drdy
 end
 
 """
@@ -1802,7 +1808,7 @@ This does *not* update any of the values stored in `component`
 """
 function residuals_and_jacobians!(component::ImplicitSystem, r, drdx, drdy, xsub,
     ysub, rsub, dxsub, dysub, x, y)
-    subcomponent_residual_and_jacobians!(component, xsub, ysub, rsub, dxsub, dysub, x, y)
+    subcomponent_residuals_and_jacobians!(component, xsub, ysub, rsub, dxsub, dysub, x, y)
     update_system_residuals!(component, r, rsub)
     update_system_input_jacobian!(component, drdx, dxsub)
     update_system_output_jacobian!(component, drdy, dxsub, dysub)
@@ -1930,22 +1936,15 @@ function subcomponent_residuals!(component::ImplicitSystem, xsub, ysub, rsub, x,
         # map inputs or subcomponent outputs to current subcomponent inputs
         for ix = 1:length(xsub[ic])
             jc, jy = component.component_input_mapping[ic][ix]
-            if jc == 0
-                # check if this input is different, update flag accordingly
-                update = update || xsub[ic][ix] != x[jy]
+            if iszero(jc)
                 # set value from system input
                 xsub[ic][ix] = x[jy]
             else
-                # check if this input is different, update flag accordingly
-                update = update || xsub[ic][ix] != y[idx[jc]+jy]
                 # set value from provided subcomponent outputs
                 xsub[ic][ix] = y[idx[jc]+jy]
             end
         end
-        # update residuals for current subcomponent (if necessary)
-        if update
-            residuals!!(subcomponent, xsub[ic], ysub[ic])
-        end
+        residuals!(subcomponent, rsub[ic], xsub[ic], ysub[ic])
     end
     return nothing
 end
@@ -1975,7 +1974,7 @@ function subcomponent_residuals!(component::ImplicitSystem, x, y)
         # map inputs or subcomponent outputs to current subcomponent inputs
         for ix = 1:length(xsub)
             jc, jy = component.component_input_mapping[ic][ix]
-            if jc == 0
+            if iszero(jc)
                 # check if this input is different, update flag accordingly
                 update = update || xsub[ix] != x[jy]
                 # set value from system input
@@ -2018,7 +2017,7 @@ function subcomponent_residuals!!(component::ImplicitSystem, x, y)
         # map inputs or subcomponent outputs to current subcomponent inputs
         for ix = 1:length(xsub)
             jc, jy = component.component_input_mapping[ic][ix]
-            if jc == 0
+            if iszero(jc)
                 # set value from system input
                 xsub[ix] = x[jy]
             else
@@ -2041,7 +2040,7 @@ results in xsub, ysub, and dsub.
 This does *not* update any of the values stored in `component`
 """
 function subcomponent_input_jacobians!(component::ImplicitSystem, xsub, ysub,
-    rsub, dsub, x, y)
+    dsub, x, y)
     # unpack subcomponents
     subcomponents = component.components
     # unpack index for accessing outputs/residuals for each component
@@ -2159,7 +2158,7 @@ results in xsub, ysub, and dsub.
 This does *not* update any of the values stored in `component`
 """
 function subcomponent_output_jacobians!(component::ImplicitSystem, xsub, ysub,
-    rsub, dsub, x, y)
+    dsub, x, y)
     # unpack subcomponents
     subcomponents = component.components
     # unpack index for accessing outputs/residuals for each component
@@ -2292,7 +2291,7 @@ function subcomponent_residuals_and_input_jacobians!(component::ImplicitSystem,
         # map inputs or subcomponent outputs to current subcomponent inputs
         for ix = 1:length(xsub[ic])
             jc, jy = component.component_input_mapping[ic][ix]
-            if jc == 0
+            if iszero(jc)
                 # set value from system input
                 xsub[ic][ix] = x[jy]
             else
@@ -2331,7 +2330,7 @@ function subcomponent_residuals_and_input_jacobians!(component::ImplicitSystem, 
         # map inputs or subcomponent outputs to current subcomponent inputs
         for ix = 1:length(xsub)
             jc, jy = component.component_input_mapping[ic][ix]
-            if jc == 0
+            if iszero(jc)
                 # check if this input is different, update flag accordingly
                 update_f = update_f || xsub[ix] != x[jy]
                 # set value from system input
@@ -2698,7 +2697,7 @@ function update_system_input_jacobian!(system::ImplicitSystem)
         nr, nx = size(dsub)
         for ix = 1:nx
             jc, jx = component_input_mapping[ic][ix]
-            if iszero(ic)
+            if iszero(jc)
                 for ir = 1:nr
                     jr = idx[ic] + ir
                     system.drdx[jr,jx] = dsub[ir,ix]
@@ -2719,11 +2718,11 @@ function update_system_input_jacobian!(system::ImplicitSystem, drdx, dsub)
     drdx .= 0.0
     component_input_mapping = system.component_input_mapping
     idx = system.idx
-    for ic = 1:length(subcomponents)
+    for ic = 1:length(dsub)
         nr, nx = size(dsub[ic])
         for ix = 1:nx
             jc, jx = component_input_mapping[ic][ix]
-            if iszero(ic)
+            if iszero(jc)
                 for ir = 1:nr
                     jr = idx[ic] + ir
                     drdx[jr,jx] = dsub[ic][ir,ix]
@@ -2732,6 +2731,39 @@ function update_system_input_jacobian!(system::ImplicitSystem, drdx, dsub)
         end
     end
     return drdx
+end
+
+"""
+    update_system_output_jacobian!(system::ImplicitSystem, drdy, dsub)
+
+Update the output jacobian `drdy` to correspond to the subcomponent output jacobians
+in dsub.
+"""
+function update_system_output_jacobian!(system::ImplicitSystem, drdy, dxsub, dysub)
+    drdy .= 0.0
+    subcomponents = system.components
+    component_input_mapping = system.component_input_mapping
+    idx = system.idx
+    # diagonal blocks
+    for ic = 1:length(subcomponents)
+        ir = iy = idx[ic]+1 : idx[ic+1]
+        drdy[ir, iy] = dysub[ic]
+    end
+    # off diagonal blocks
+    for ic = 1:length(subcomponents)
+        nr, nx = size(dxsub[ic])
+        for ix = 1:nx
+            jc, jy = component_input_mapping[ic][ix]
+            if !iszero(jc)
+                for ir = 1:nr
+                    kr = idx[ic] + ir
+                    ky = idx[jc] + jy
+                    drdy[kr, ky] = dxsub[ic][ir,ix]
+                end
+            end
+        end
+    end
+    return drdy
 end
 
 """
@@ -2757,7 +2789,7 @@ function update_system_output_jacobian!(system::ImplicitSystem)
         nr, nx = size(dxsub)
         for ix = 1:nx
             jc, jy = component_input_mapping[ic][ix]
-            if !iszero(ic)
+            if !iszero(jc)
                 for ir = 1:nr
                     kr = idx[ic] + ir
                     ky = idx[jc] + jy
@@ -2767,37 +2799,4 @@ function update_system_output_jacobian!(system::ImplicitSystem)
         end
     end
     return residual_output_jacobian(system)
-end
-
-"""
-    update_system_output_jacobian!(system::ImplicitSystem, drdy, dsub)
-
-Update the output jacobian `drdy` to correspond to the subcomponent output jacobians
-in dsub.
-"""
-function update_system_output_jacobian!(system::ImplicitSystem, drdy, dxsub, dysub)
-    system.drdy .= 0.0
-    subcomponents = system.components
-    component_input_mapping = system.component_input_mapping
-    idx = system.idx
-    # diagonal blocks
-    for ic = 1:length(subcomponents)
-        ir = iy = idx[ic]+1 : idx[ic+1]
-        system.drdy[ir, iy] = dysub[ic]
-    end
-    # off diagonal blocks
-    for ic = 1:length(subcomponents)
-        nr, nx = size(dxsub[ic])
-        for ix = 1:nx
-            jc, jy = component_input_mapping[ic][ix]
-            if !iszero(ic)
-                for ir = 1:nr
-                    kr = idx[ic] + ir
-                    ky = idx[jc] + jy
-                    system.drdy[kr, ky] = dxsub[ic][ir,ix]
-                end
-            end
-        end
-    end
-    return drdy
 end
