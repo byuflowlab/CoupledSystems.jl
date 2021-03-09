@@ -79,6 +79,7 @@ function ExplicitComponent(x0, y0; f=nothing, df=nothing,
         fdf = function(y, dydx, x)
             f(y, x)
             df(dydx, x)
+            return y, dydx
         end
     end
 
@@ -86,86 +87,248 @@ function ExplicitComponent(x0, y0; f=nothing, df=nothing,
 end
 
 """
-    ExplicitComponent(component::ImplicitComponent; solver, y0, dydx, sparsity)
+    ExplicitComponent(component::AbstractImplicitComponent; kwargs...)
 
-Constructs an explicit system component from an implicit system component
-coupled with a solver and an initial guess.
+Couple an implicit component with a solver to construct an explicit component.
+
+For computational efficiency when computing derivatives it is recommended that
+the version of this function which incorporates an output component is used
+rather than this one.
+
+ # Keyword Arguments
+ - `solver = Newton()`: Solver, either a function of the form `y = f(component, x, y0)`
+        or an object of type [`AbstractSolver`](@ref)
+ - `y0 = rand(length(component.y_f))`: Initial guess for outputs
+ - `dydx`: Provides size and type of jacobian output, otherwise it will be
+        allocated based on the inputs, outputs, and the sparsity structure in `sparsity`
+ - `sparsity = DensePattern()`: Defines the sparsity structure of the jacobian if `dydx` is not provided
 """
-function ExplicitComponent(component::ImplicitComponent; solver=nothing,
-    y0=rand(length(component.y_f)), dydx = nothing, sparsity=DensePattern())
+function ExplicitComponent(component::AbstractImplicitComponent; solver=Newton(),
+    y0 = rand(length(component.y_f)), dydx = nothing, sparsity=DensePattern())
 
     # allocate storage and initialize with NaNs (since values are as of yet undefined)
     x_f = NaN .* component.x_f
-    x_df = x_f # alias with x_f since both are computed simulataneously
+    x_df = NaN .* component.x_f
     y = NaN .* component.y_f
     dydx = isnothing(dydx) ? allocate_jacobian(x_f, y, sparsity) : NaN .* dydx
 
+    # NOTE: xcache stores the current inputs to the solver
+    # As xcache is updated, the function upon which the solver operates is
+    # updated as well.
+    xcache = similar(x_f)
+
+    # we distinguish between mutating and non-mutating cache so that we can use
+    # automatic differentiation on the non-mutating cache.
+    cache = create_mutating_solver_cache(component, xcache, solver)
+
+    # output function
     f = function(y, x)
-        # assemble inputs to nonlinear solver
-        f! = (r, y) -> residuals!(component, r, x, y)
-        j! = (drdy, y) -> residual_output_jacobian!(component, drdy, x, y)
-        fj! = function(r, drdy, y)
-            residuals!(component, r, x, y)
-            residual_output_jacobian!(component, drdy, x, y)
-            return r, drdy
-        end
-        r = residuals(component)
-        drdy = residual_output_jacobian(component)
-        y_f = component.y_f
-        y_df = component.y_dfdy
-        f_calls = [0,]
-        df_calls = [0,]
-
-        df = OnceDifferentiable(f!, j!, fj!, r, drdy, y_f, y_df, f_calls, df_calls)
-
-        # solve nonlinear system of equations for outputs
-        results = nlsolve(df, y0, method=:newton, linesearch=BackTracking())
-
-        if results.f_converged
-            copyto!(y0, results.zero)
-            copyto!(y, results.zero)
+        # determine whether to use internal cache
+        if eltype(x) <: eltype(xcache)
+            # use existing cache since we can store the inputs
+            copyto!(xcache, x)
+            copyto!(y, solver(cache, x, y0))
         else
-            copyto!(y, NaN)
+            # we can't use the existing cache, create a new cache
+            new_cache = create_nonmutating_solver_cache(component, x, solver)
+            # y0 might not have the right type so we use y instead
+            y .= y0
+            # call solver and copy results to output vector
+            copyto!(y, solver(new_cache, x, y))
         end
-
-        # return outputs
         return y
     end
 
+    # function and partials
     fdf = function(y, dydx, x)
-
-        # converge residual function
-        f(y, x)
-
+        # determine whether to use internal cache
+        if eltype(x) <: eltype(xcache)
+            # use existing cache if we can store the inputs
+            copyto!(xcache, x)
+            copyto!(y, solver(cache, x, y0))
+        else
+            # we can't use the existing cache, create a new cache
+            new_cache = create_nonmutating_solver_cache(component, x, solver)
+            # y0 might not have the right type so we use y instead
+            y .= y0
+            # call solver and copy results to output vector
+            copyto!(y, solver(new_cache, x, y0))
+        end
         # get jacobian of the residual function with respect to the inputs
-        drdx = residual_input_jacobian(component, x, y)
-
+        drdx = residual_input_jacobian!(component, x, y)
         # get jacobian of the residual function with respect to the outputs
-        drdy = residual_output_jacobian(component, x, y)
-
+        drdy = residual_output_jacobian!(component, x, y)
         # get analytic sensitivities
-        dydx .= -drdy\drdx
-
+        copyto!(dydx, -drdy\drdx)
+        # return outputs
         return y, dydx
     end
 
-    df = (dydx, x) -> fdf(y, dydx, x)[2]
+    # partials only
+    df = function(dydx, x)
+        y, dydx = fdf(y, dydx, x)
+        return dydx
+    end
 
     return ExplicitComponent(f, df, fdf, x_f, x_df, y, dydx)
 end
 
 """
-    ExplicitSystem(x0, y0, components, component_input_mapping, output_mapping)
+    ExplicitComponent(component::AbstractImplicitComponent, output_component; kwargs...)
+
+Couple an implicit component with a solver to construct an explicit component.
+
+Reduce the dimensionality of the outputs by incorporating the output function
+contained in `output_component`.  The vector of inputs to `output_component` are
+assumed to contain the input variables to `component` followed by the
+output/state variables of `component` .
+
+ # Keyword Arguments
+ - `solver = Newton()`: Solver, either a function of the form `y = f(component, x, y0)`
+        or an object of type [`AbstractSolver`](@ref)
+ - `u0 = rand(length(component.y_f))`: Initial guess for state variables
+ - `dydx`: Provides size and type of jacobian output, otherwise it will be
+        allocated based on the inputs, outputs, and the sparsity structure in `sparsity`
+ - `sparsity = DensePattern()`: Defines the sparsity structure of the jacobian if `dydx` is not provided
+ - `mode = Adjoint()`: Mode in which to compute the derivatives.  Choose between
+    [`Direct()`](@ref) and [`Adjoint()`](@ref).
+"""
+function ExplicitComponent(component::AbstractImplicitComponent, output_component;
+    solver=Newton(), u0=rand(length(component.y_f)), dydx = nothing,
+    sparsity=DensePattern(), mode = Adjoint())
+
+    # allocate storage and initialize with NaNs (since values are as of yet undefined)
+    x_f = NaN .* component.x_f
+    x_df = NaN .* component.x_f
+    y = NaN .* output_component.y_f
+    dydx = isnothing(dydx) ? allocate_jacobian(x_f, y, sparsity) : NaN .* dydx
+
+    # input and state variable dimensions
+    nx = length(component.x_f)
+    nu = length(component.y_f)
+
+    # NOTE: xcache stores the current inputs to the solver
+    # As xcache is updated, the function upon which the solver operates is
+    # updated as well.
+    xcache = similar(x_f)
+
+    # we distinguish between mutating and non-mutating cache so that we can
+    # use different types when using the non-mutating cache
+    cache = create_mutating_solver_cache(component, xcache, solver)
+
+    # vector for storing the inputs to the output function
+    x_output = vcat(component.x_f, outputs(component))
+
+    # view into design variables of implicit system
+    xx_output = view(x_output, 1:nx)
+
+    # view into state variables of implicit system
+    xu_output = view(x_output, nx+1:nx+nu)
+
+    # output function
+    f = function(y, x)
+        if eltype(x) <: eltype(xcache)
+            # use existing cache since we can store the inputs
+            copyto!(xcache, x)
+            u = solver(cache, x, u0)
+        else
+            # we can't use the existing cache, create a new cache
+            new_cache = create_nonmutating_solver_cache(component, x, solver)
+            # u0 might not have the right type so we convert it
+            u = solver(new_cache, x, eltype(x).(u0))
+        end
+        # fill in inputs to output function
+        copyto!(xx_output, x)
+        copyto!(xu_output, u)
+        # get outputs from output function
+        outputs!(output_component, x_output)
+        # copy outputs to return vector
+        copyto!(y, outputs(output_component))
+        return y
+    end
+
+    # partials
+    df = function(dydx, x)
+        if eltype(x) <: eltype(xcache)
+            # use existing cache since we can store the inputs
+            copyto!(xcache, x)
+            u = solver(cache, x, u0)
+        else
+            # we can't use the existing cache, create a new cache
+            new_cache = create_nonmutating_solver_cache(component, x, solver)
+            # u0 might not have the right type so we convert it
+            u = solver(new_cache, x, eltype(x).(u0))
+        end
+        # get jacobian of the residual function with respect to the inputs
+        drdx = residual_input_jacobian!(component, x, u)
+        # get jacobian of the residual function with respect to the state variables
+        drdu = residual_output_jacobian!(component, x, u)
+        # copy inputs and state variables to output function inputs
+        copyto!(xx_output, x)
+        copyto!(xu_output, u)
+        # get jacobian of the outputs with respect to the inputs and state variables
+        df = jacobian!(output_component, x_output)
+        # extract output jacobian corresponding to inputs
+        dfdx = view(df, :, 1 : nx)
+        # extract output jacobian corresponding to state variables
+        dfdu = view(df, :, nx + 1 : nx + nu)
+        # apply analytic sensitivity equation in direct or adjoint mode
+        copyto!(dydx, analytic_sensitivity_equation(dfdx, dfdu, drdx, drdu, dydu, mode))
+        return dydx
+    end
+
+    fdf = function(y, dydx, x)
+        if eltype(x) == eltype(xcache)
+            # use existing cache since we can store the inputs
+            copyto!(xcache, x)
+            u = solver(cache, x, u0)
+        else
+            # we can't use the existing cache, create a new cache
+            new_cache = create_nonmutating_solver_cache(component, x, solver)
+            # u0 might not have the right type so we convert it
+            u = solver(new_cache, x, eltype(x).(u0))
+        end
+        # get residuals and jacobians of the residual function
+        r, drdx, drdu = residuals_and_jacobian!(component, x, y)
+        # copy inputs and outputs to output function inputs
+        copyto!(xx_output, x)
+        copyto!(xu_output, u)
+        # get outputs and jacobian of the outputs with respect to the inputs and state variables
+        y[:], df = outputs_and_jacobian!(output_component, x_output)
+        # extract output jacobian corresponding to inputs
+        dfdx = view(df, :, 1 : nx)
+        # extract output jacobian corresponding to state variables
+        dfdu = view(df, :, nx + 1 : nx + nu)
+        # apply analytic sensitivity equation in direct or adjoint mode
+        copyto!(dydx, analytic_sensitivity_equation(dfdx, dfdu, drdx, drdu, dydu, mode))
+        return y, dydx
+    end
+
+    return ExplicitComponent(f, df, fdf, x_f, x_df, y, dydx)
+end
+
+"""
+    analytic_sensitivity_equation(dfdx, dfdu, drdx, drdu, mode)
+
+Compute the sensitivities of an implicit system using the analytic sensitivity
+equation in `Direct()` or `Adjoint()` mode.
+"""
+analytic_sensitivity_equation
+analytic_sensitivity_equation(dfdx, dfdu, drdx, drdu, ::Direct) = dfdx - dfdu*(drdu\drdx)
+analytic_sensitivity_equation(dfdx, dfdu, drdx, drdu, ::Adjoint) = dfdx - transpose(transpose(drdu)\transpose(dfdu))*drdx
+
+"""
+    ExplicitSystem(x0, y0, components, component_mapping, output_mapping)
 
 Construct an explicit system component from a collection of explicit system
 components.
 
 # Arguments
- - `x0`: Initial values for inputs (used for size and type information)
- - `y0`: Initial values for outputs (used for size and type information)
+ - `x0`: Initial values for system inputs (used for size and type information)
+ - `y0`: Initial values for system outputs (used for size and type information)
  - `components::TC`: Collection of explicit components (see [`ExplicitComponents`](@ref))
     in calling order
- - `component_input_mapping::Vector{Vector{NTuple{2, Int}}`: Output to input mapping
+ - `component_mapping::Vector{Vector{NTuple{2, Int}}`: Output to input mapping
     for each component.  The first index corresponds to the component from which
     a component input is taken, with index 0 corresponding to a value from the
     system inputs. The second index is an index into the specified array.
@@ -178,14 +341,18 @@ components.
  - `dydx`: Matrix used to define size and type of the jacobian matrix. If omitted,
     the jacobian matrix size and type will be infered from the inputs, outputs, and
     the sparsity structure.
- - `mode`: Mode used to calculate system derivatives.  May be either `Forward()` or
-    `Reverse()`, defaults to `Reverse()`
+ - `sparsity`: Sparsity structure of the system jacobian matrix
+ - `mode`: Mode used to calculate system derivatives using the chain rule.  May
+    be either [`Forward()`](@ref) or [`Reverse()`](@ref), defaults to [`Reverse()`](@ref)
 """
 function ExplicitSystem(x0, y0, components, component_input_mapping, output_mapping;
     dydx = nothing, mode=Reverse(), sparsity=DensePattern())
 
     # number of components
     nc = length(components)
+
+    # ensure all components are explicit
+    @assert all(isa.(components, AbstractExplicitComponent)) "All components of an explicit system must be explicit"
 
     # ensure sizes of `x`, `y`, and `dydx` are compatibile
     @assert isnothing(dydx) || (length(y0) == size(dydx, 1) && length(x0) == size(dydx, 2))
@@ -234,7 +401,7 @@ function ExplicitSystem(x0, y0, components, component_input_mapping, output_mapp
     dydx = isnothing(dydx) ? allocate_jacobian(x0, y0, sparsity) : NaN .* dydx
 
     # construct forward mode mapping
-    input_mapping, component_output_mapping = output_to_input_mapping(x0,
+    input_mapping, component_output_mapping = forward_mode_mapping(x0,
         components, component_input_mapping, output_mapping)
 
     return ExplicitSystem(Tuple(components), collect(input_mapping),
@@ -243,14 +410,14 @@ function ExplicitSystem(x0, y0, components, component_input_mapping, output_mapp
 end
 
 """
-    output_to_input_mapping(inputs, components, component_input_mapping, output_mapping)
+    forward_mode_mapping(inputs, components, component_input_mapping, output_mapping)
 
 Returns (`input_mapping, component_output_mapping`) where `input_mapping` contains
 a mapping from each system input to component inputs and/or system outputs and
 `reversed_component_mapping` contains a mapping from each component output to
 corresponding component inputs and/or system outputs.
 """
-function output_to_input_mapping(inputs, components, component_input_mapping, output_mapping)
+function forward_mode_mapping(inputs, components, component_input_mapping, output_mapping)
 
     # get number of inputs and components
     nx = length(inputs)
@@ -313,8 +480,8 @@ end
 """
     ImplicitComponent(x0, y0, r0; kwargs...)
 
-Construct a system component defined by the explicit vector-valued output
-function: `y = f(x)`.
+Construct a system component defined by the implicit vector-valued residual
+function: `0 = f(x, y)`.
 
 # Arguments
  - `x0`: Initial values for inputs (used for size and type information)
@@ -334,9 +501,9 @@ function: `y = f(x)`.
      with respect to the outputs. If omitted, its size and type will be infered
     from the outputs, residuals, and sparsity.
  - `xderiv`: Method used to calculate the residual jacobian with respect to the
-    inputs if it is not provided. Defaults to forward finite differencing.
+    inputs if it is not provided. Defaults to [`ForwardFD`](@ref).
  - `yderiv`: Method used to calculate the residual jacobian with respect to the
-    outputs if it is not provided. Defaults to forward finite differencing.
+    outputs if it is not provided. Defaults to [`ForwardFD`](@ref).
  - `xsparsity`: Sparsity structure of the residual jacobian with respect to the
     inputs. Defaults to [`DensePattern()`](@ref)
  - `ysparsity`: Sparsity structure of the residual jacobian with respect to the
@@ -501,7 +668,6 @@ function ImplicitComponent(x0, y0, r0; f=nothing, dfdx=nothing, dfdy=nothing,
         y_dfdx, x_dfdy, y_dfdy, r, drdx, drdy)
 end
 
-
 """
     ImplicitComponent(component::ExplicitComponent)
 
@@ -518,7 +684,7 @@ function ImplicitComponent(component::ExplicitComponent)
     y_dfdy = NaN .* component.y
     r = NaN .* component.y
     drdx = NaN .* component.dydx
-    drdy = sparse(1:length(r), 1:length(y_f), ones(length(r)))
+    drdy = Matrix(-I, length(r), length(y_f))
 
     f = function(r, x, y)
         # update outputs, store in residual
@@ -564,9 +730,20 @@ function ImplicitComponent(component::ExplicitComponent)
         y_dfdx, x_dfdy, y_dfdy, r, drdx, drdy)
 end
 
-function ImplicitSystem(x0, y0, components, component_input_mapping, output_mapping;
-    xsys = nothing, ysys = nothing, rsys = nothing, drdx = nothing,
-    drdy = nothing, mode = Reverse())
+"""
+    ImplicitSystem(x0, components, component_input_mapping;
+        drdx=nothing, drdy=nothing, xsparsity=DensePattern(), ysparsity=DensePattern())
+
+Constructs an implicit system component from an explicit system component.
+"""
+function ImplicitSystem(x0, components, component_input_mapping;
+    drdx=nothing, drdy=nothing, xsparsity=DensePattern(), ysparsity=DensePattern())
+
+    # number of components
+    nc = length(components)
+
+    # ensure all components are implicit
+    @assert all(isa.(components, AbstractImplicitComponent)) "All components of an implicit system must be implicit"
 
     # check that there is an input mapping for each component
     @assert length(components) == length(component_input_mapping) "There must be an input mapping for each component"
@@ -586,42 +763,26 @@ function ImplicitSystem(x0, y0, components, component_input_mapping, output_mapp
                     "corresponds to non-existant output $jx of component $jc"
             end
         end
-        for iy = 1:length(output_mapping)
-            (jc, jy) = output_mapping[iy]
-            if iszero(jc)
-                # check that system output uses available system inputs
-                @assert jy <= length(x0) "System output $iy "*
-                    "corresponds to non-existant system input $jy"
-            else
-                # check that each component input only uses available component outputs
-                @assert jc <= nc "System output $iy comes from non-existant "
-                    "component $jc"
-                @assert jy <= length(outputs(components[jc])) "System output $iy "*
-                    "corresponds to non-existant output $jx of component $jc"
-            end
-        end
     end
 
-    # construct forward mode mapping
-    input_mapping, component_output_mapping = output_to_input_mapping(x0,
-        components, component_input_mapping, output_mapping
-
     # allocate storage and initialize with NaNs (since values are not yet defined)
-    x_f = vcat(eltype(x0)[], inputs.(components)...) .* NaN
-    y_f = vcat(eltype(y0)[], outputs.(components)...) .* NaN
+    x_f = x0 .* NaN
+    y_f = vcat(outputs.(components)...) .* NaN
     x_dfdx = copy(x_f)
     y_dfdx = copy(y_f)
     x_dfdy = copy(x_f)
     y_dfdy = copy(y_f)
     r = copy(y_f)
-    drdx = spzeros(promote_type(eltype(rsys), eltype(xsys)), length(rsys), length(xsys))
-    drdy = spzeros(promote_type(eltype(rsys), eltype(ysys)), length(rsys), length(ysys))
+    drdx = isnothing(drdx) ? allocate_jacobian(x_f, r, xsparsity) : drdx .* NaN
+    drdy = isnothing(drdy) ? allocate_jacobian(y_f, r, ysparsity) : drdy .* NaN
+
+    # ensure jacobian sizes are compatibile
+    @assert (length(r) == size(drdx, 1) && length(x_f) == size(drdx, 2))
+    @assert (length(r) == size(drdy, 1) && length(y_f) == size(drdy, 2))
 
     # construct index for accessing outputs/residuals for each component
-    idx = vcat(0, cumsum(length.(residuals.(components))))
+    idx = vcat(0, cumsum(length.(residuals.(components)))...)
 
-    return ImplicitSystem(Tuple(components), collect(input_mapping),
-        collect(component_output_mapping), collect(component_input_mapping),
-        collect(output_mapping), x_f, y_f, x_dfdx, y_dfdx, x_dfdy, y_dfdy, r,
-        drdx, drdy, idx, mode)
+    return ImplicitSystem(Tuple(components), collect(component_input_mapping),
+        x_f, y_f, x_dfdx, y_dfdx, x_dfdy, y_dfdy, r, drdx, drdy, idx)
 end
