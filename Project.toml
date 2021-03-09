@@ -16,6 +16,9 @@ SparseDiffTools = "47a9eef4-7e08-11e9-0b38-333d64bd3804"
 
 [compat]
 DiffResults = "1.0"
+SparseDiffTools = "1.13"
+FiniteDiff = "2.8"
+ForwardDiff = "0.10"
 julia = "1"
 
 [extras]
