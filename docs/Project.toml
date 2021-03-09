@@ -1,3 +1,5 @@
 [deps]
 CoupledSystems = "4b676bd6-8509-44ec-b400-4b24e2871ede"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"

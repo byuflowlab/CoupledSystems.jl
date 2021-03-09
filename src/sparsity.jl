@@ -95,7 +95,11 @@ function SparsePattern(diffmethod, func!, ng, lx, ux)
     return SparsePattern(diffmethod, func!, ng, x1, x2, x3)
 end
 
-#  used internally to get rows and cols for dense jacobian
+"""
+    getsparsity(::DensePattern, nx, nf)
+
+Get rows and cols for dense jacobian
+"""
 function getsparsity(::DensePattern, nx, nf)
     len = nf*nx
     rows = [i for i = 1:nf, j = 1:nx][:]
@@ -103,5 +107,9 @@ function getsparsity(::DensePattern, nx, nf)
     return rows, cols
 end
 
-#  used internally to get rows and cols for sparse jacobian
+"""
+    getsparsity(sp::SparsePattern, nx, nf)
+
+Get rows and cols for sparse jacobian
+"""
 getsparsity(sp::SparsePattern, nx, nf) = sp.rows, sp.cols
