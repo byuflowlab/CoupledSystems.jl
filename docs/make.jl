@@ -1,8 +1,6 @@
 using CoupledSystems
 using Documenter
 
-DocMeta.setdocmeta!(CoupledSystems, :DocTestSetup, :(using CoupledSystems); recursive=true)
-
 makedocs(;
     modules=[CoupledSystems],
     authors="Taylor McDonnell <taylor.golden.mcdonnell@gmail.com> and contributors",
@@ -14,5 +12,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Getting Started" => "guide.md",
+        "Theory" => "theory.md",
     ],
 )
