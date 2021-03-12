@@ -10,97 +10,122 @@ Our goal is to manipulate this problem in order to create a single explicit func
 
 ![](sellar-xdsm-final.svg)
 
-## Constructing Explicit Components
+## Defining System Variables
 
-Let's start by loading the package, and then constructing each of the components of the Sellar problem individually.  Since all of the components (when considered in isolation) are explicit, we model them as such.
+Let's start by loading the package and defining the system variables.  This can be done with the ``@var`` macro.
 
 ```@example guide
 using CoupledSystems
 
+# Name all variables and give them default values
+@var x = 0.0
+@var y1 = 0.0
+@var y2 = 0.0
+@var z1 = 0.0
+@var z2 = 0.0
+@var f = 0.0
+@var g1 = 0.0
+@var g2 = 0.0
+nothing #hide
+```
+
+Each variables name is used to define connections between components. The values associated with each variable define the size and type of the variable.
+
+## Constructing Explicit Components
+
+Now that we have defined our system variables, we can use them to construct each of the components in the Sellar problem.  Since all of the components (when considered in isolation) are explicit, we model them as such.  
+
+```@example guide
 # --- Define Discipline 1 --- #
 
-# vector valued input-output function
-function f_d1(outputs, inputs)
-    z1 = inputs[1]
-    z2 = inputs[2]
-    x = inputs[3]
-    y2 = inputs[4]
-    outputs[1] = z1^2 + z2 + x - 0.2*y2
+# describe function inputs/outputs
+fin = (x, y2, z1, z2) # inputs
+fout = (y1,) # normal outputs
+fout_m = () # in-place (mutating) outputs
+
+# create function for discipline 1
+function f_d1(x, y2, z1, z2)
+    y1 = z1^2 + z2 + x - 0.2*y2
+    return y1
 end
 
-# define arrays that define size and type of inputs and outputs
-inputs_d1 = zeros(4)
-outputs_d1 = zeros(1)
-
 # construct explicit component for discipline 1
-d1 = ExplicitComponent(inputs_d1, outputs_d1; f=f_d1, deriv=ForwardFD())
+d1 = ExplicitComponent(f_d1, fin, fout, fout_m; deriv=ForwardFD())
 
 # --- Define Discipline 2 --- #
 
-# vector valued input-output function
-function f_d2(outputs, inputs)
-    z1 = inputs[1]
-    z2 = inputs[2]
-    y1 = inputs[3]
-    outputs[1] = sqrt(y1) + z1 + z2
+# describe function inputs/outputs
+fin = (y1, z1, z2) # inputs
+fout = (y2,) # normal outputs
+fout_m = () # in-place (mutating) outputs
+
+# create function for discipline 2
+function f_d2(y1, z1, z2)
+    y2 = sqrt(y1) + z1 + z2
+    return y2
 end
 
-# define arrays that define size and type of inputs and outputs
-inputs_d2 = zeros(3)
-outputs_d2 = zeros(1)
-
 # construct explicit component for discipline 2
-d2 = ExplicitComponent(inputs_d2, outputs_d2; f=f_d2, deriv=ForwardFD())
+d2 = ExplicitComponent(f_d2, fin, fout, fout_m; deriv=ForwardFD())
 
 # --- Define Objective --- #
 
-function f_obj(outputs, inputs)
-    z1 = inputs[1]
-    x = inputs[2]
-    y1 = inputs[3]
-    y2 = inputs[4]
-    outputs[1] = x^2 + z1 + y1 + exp(-y2) # objective
+# describe function inputs/outputs
+fin = (x, y1, y2, z1) # inputs
+fout = (f,) # normal outputs
+fout_m = () # in-place (mutating) outputs
+
+# create objective function
+function f_obj(x, y1, y2, z1)
+    f = x^2 + z1 + y1 + exp(-y2) # objective
+    return f
 end
 
-# define arrays that define size and type of inputs and outputs
-inputs_obj = zeros(4)
-outputs_obj = zeros(1)
-
 # construct explicit component for objective
-obj = ExplicitComponent(inputs_obj, outputs_obj; f=f_obj, deriv=ForwardFD())
+obj = ExplicitComponent(f_obj, fin, fout, fout_m; deriv=ForwardFD())
 
 # --- Define Constraint 1 --- #
 
-function f_c1(outputs, inputs)
-    y1 = inputs[1]
-    outputs[1] = 3.16 - y1
+# describe function inputs/outputs
+fin = (y1,) # inputs
+fout = (g1,) # normal outputs
+fout_m = () # in-place (mutating) outputs
+
+# define first constraint function
+function f_c1(y1)
+    g1 = 3.16 - y1
+    return g1
 end
 
-# define arrays that define size and type of inputs and outputs
-inputs_c1 = zeros(1)
-outputs_c1 = zeros(1)
-
 # construct explicit component for constraint 1
-c1 = ExplicitComponent(inputs_c1, outputs_c1; f=f_c1, deriv=ForwardFD())
+c1 = ExplicitComponent(f_c1, fin, fout, fout_m; deriv=ForwardFD())
 
 # --- Define Constraint 2 --- #
 
-function f_c2(outputs, inputs)
-    y2 = inputs[1]
-    outputs[1] = y2 - 24.0
+# describe function inputs/outputs
+fin = (y2,) # inputs
+fout = (g2,) # normal outputs
+fout_m = () # in-place (mutating) outputs
+
+# define second constraint function
+function f_c2(y2)
+    g2 = y2 - 24.0
+    return g2
 end
 
-# define arrays that define size and type of inputs and outputs
-inputs_c2 = zeros(1)
-outputs_c2 = zeros(1)
-
 # construct explicit component for constraint 2
-c2 = ExplicitComponent(inputs_c2, outputs_c2; f=f_c2, deriv=ForwardFD())
+c2 = ExplicitComponent(f_c2, fin, fout, fout_m; deriv=ForwardFD())
 
 nothing #hide
 ```
 
-Note that rather than providing the jacobians of each function directly, we use forward finite differencing to estimate the jacobian of each component. This is the default behavior of CoupledSystems.  Other provided jacobian calculation methods include [`CentralFD()`](@ref), [`ComplexFD()`](@ref), [`ForwardAD()`](@ref), and [`ReverseAD()`](@ref).  It's also possible to provide your own jacobian function through the `df` keyword argument.
+The method by which to calculate the jacobian of each component is provided through the `deriv` keyword argument.  Possible jacobian calculation methods include:
+ - Forward Finite Differencing ([`ForwardFD`](@ref)) (default)
+ - Central Finite Differencing ([`CentralFD()`](@ref))
+ - Complex Step Finite Differencing ([`ComplexFD()`](@ref))
+ - Forward-Mode Automatic Differentiation ([`ForwardAD()`](@ref))
+ - Reverse-Mode Automatic Differentiation ([`ReverseAD()`](@ref))  
+You can even provide your own jacobian function through the `df` keyword argument.
 
 ## Converting Explicit Components into Implicit Components
 
@@ -120,52 +145,77 @@ d2i = ImplicitComponent(d2)
 nothing #hide
 ```
 
-## Combining Implicit Components into an Implicit System
+## Constructing an Implicit System
 
-At this point we combine the two implicit components to create a single set of residual equations.  The state variables (which are also the system outputs) are also combined.
+At this point we combine the two implicit components to create a single set of residual equations.  The state variables of the corresponding system correspond to the outputs of all of its subcomponents.
 
 ```@example guide
 
-# define input mapping for discipline 1
-mapping_1 = [
-    (0, 1), # first input (z1) is index 1 of the system inputs
-    (0, 2), # second input (z2) is index 2 of the system inputs
-    (0, 3), # third input (x) is index 3 of the system inputs
-    (2, 1), # fourth input (y2) is the first output from discipline 2
-]
-
-# define input mapping for discipline 2
-mapping_2 = [
-    (0, 1), # first input (z1) is index 1 of the system inputs
-    (0, 2), # second input (z2) is index 2 of the system inputs
-    (1, 1), # third input is the first output from the first component
-]
-
-# array that defines size and types of the inputs
-inputs_isys = zeros(3)
-
 # components in the implicit system
-components_isys = [d1i, d2i]
+components_isys = (d1i, d2i)
 
-# input mapping for components in the implicit system
-component_mapping_isys = [mapping_1, mapping_2]
+# inputs to the implicit system
+inputs_isys = (x, z1, z2)
+
+# outputs are the subcomponent outputs
 
 # implicit system construction
-isys = ImplicitSystem(inputs_isys, components_isys, component_mapping_isys)
+isys = ImplicitSystem(components_isys, inputs_isys)
 
 nothing #hide
 ```
 
-Let's now update the XDSM diagram to account for the newly combined system.
+It is also possible to construct an implicit system directly from explicit components.  In this case, explicit components are converted to implicit components during construction.
+
+```@example guide
+
+# components in the implicit system
+components_isys = (d1, d2)
+
+# inputs to the implicit system
+inputs_isys = (x, z1, z2)
+
+# implicit system construction
+isys = ImplicitSystem(components_isys, inputs_isys)
+
+nothing #hide
+```
+
+Let's now update the XDSM diagram to account for the newly constructed implicit system.
 
 ![](sellar-xdsm3.svg)
 
 ## Coupling an Implicit Component with a Solver to Construct an Explicit Component
 
-Now that we have a single implicit system of equations, we can couple it with the nonlinear solver, which will effectively convert it into an explicit component.  The outputs of the resulting explicit component will be equal to the outputs of each of the implicit system's subcomponents, concatenated.
+Now that we have a single implicit system of equations, let's couple it with a nonlinear solver in order to solve for the outputs.  We represent the resulting component as an explicit component.
 
 ```@example guide
-mda = ExplicitComponent(isys, solver=Newton())
+mda = ExplicitComponent(isys; solver=Newton())
+nothing #hide
+```
+
+The default outputs for an implicit component/system which is converted to a explicit component are the state variables of the system.  However, it is also possible to provide only a subset of the state variables as outputs.  This has the potential to reduce computational expenses related to derivative computations.
+
+```@example guide
+fout = (y1, y2)
+mda = ExplicitComponent(isys, fout; solver=Newton())
+nothing #hide
+```
+
+Another option for reducing the computational expenses involved with derivative computations is to include an output function (expressed as an explicit component) when coupling an implicit system with a nonlinear solver.  An output function calculates a small number of outputs (relative to the number of state variables) from the inputs and state variables of an implicit system.
+
+Since all state variables are outputs in this toy problem, there is no benefit to adopting this approach here, but in many practical applications the number of outputs is far less than the number of states making the use of an output function highly beneficial.
+
+```@example guide
+
+# Create an output component (trivial for this problem)
+fin = (y1, y2)
+fout = (y1, y2)
+foutin = ()
+fcomp = (y1, y2) -> (y1, y2)
+comp = ExplicitComponent(fcomp, fin, fout, foutin; deriv = ForwardFD())
+
+mda = ExplicitComponent(isys, comp; solver=Newton())
 nothing #hide
 ```
 
@@ -179,52 +229,16 @@ Since there are no longer any model interdependencies, each component may be cal
 
 ```@example guide
 
-# define input mapping for the multidisciplinary analysis
-mapping_mda = [
-    (0, 1), # first input (z1) is index 1 of the system inputs
-    (0, 2), # second input (z2) is index 2 of the system inputs
-    (0, 3), # third input (x) is index 3 of the system inputs
-]
+# components in the sellar problem
+components_sellar = (mda, obj, c1, c2)
 
-# define input mapping for the objective
-mapping_obj = [
-    (0, 1), # first input (z1) is index 1 of the system inputs
-    (0, 3), # second input (x) is index 3 of the system inputs
-    (1, 1), # third input (y1) is the first output from the multidisciplinary analysis
-    (1, 2), # fourth input (y2) is the second output from the multidisciplinary analysis
-]
+# inputs to the sellar problem
+inputs_sellar = (x, z1, z2)
 
-# define input mapping for the first constraint
-mapping_g1 = [
-    (1, 1), # first input (y1) is the first output from the multidisciplinary analysis
-]
+# outputs from the sellar problem
+outputs_sellar = (f, g1, g2)
 
-# define input mapping for the second constraint
-mapping_g2 = [
-    (1, 2), # first input (y2) is the second output from the multidisciplinary analysis
-]
-
-# array defining size and type of inputs to the explicit system
-inputs_sellar = zeros(3)
-
-# components in the explicit system
-components_sellar = [mda, obj, c1, c2]
-
-# input mapping for each of the components
-component_mapping_sellar = [mapping_mda, mapping_obj, mapping_g1, mapping_g2]
-
-# array defining size and type of outputs from the explicit system
-outputs_sellar = zeros(3)
-
-# output mapping for the combined system
-output_mapping_sellar = [
-    (2, 1), # first output is the first output from the second component
-    (3, 1), # second output is the first output from the third component
-    (4, 1), # third output is the first output from the fourth component
-]
-
-sellar = ExplicitSystem(inputs_sellar, outputs_sellar, components_sellar,
-    component_mapping_sellar, output_mapping_sellar; mode=Reverse())
+sellar = ExplicitSystem(components_sellar, inputs_sellar, outputs_sellar)
 
 nothing #hide
 ```
@@ -235,23 +249,45 @@ At this point we have achieved our goal of representing the Sellar problem as an
 
 ## Querying Explicit Components and/or Systems
 
-Now that our entire system has been reduced down into a single explicit component, we can easily obtain the outputs and their derivatives with respect to the design variables for any set of design variables.
+Now that our entire system has been reduced down into a single explicit component, we can easily obtain the outputs (expressed as a vector) and their derivatives (expressed as a matrix) with respect to the design variables for any set of design variables.
 
 ```@example guide
-# inputs to the Sellar problem
-x = rand(3)
+# input arguments to the Sellar problem, expressed as a single vector
+X = rand(3)
 
-# outputs from the Sellar problem
-y = outputs!(sellar, x)
+# outputs from the Sellar problem, expressed as a single vector
+Y = outputs!(sellar, X)
 
-# jacobian of the outputs with respect to the inputs
-dydx = jacobian!(sellar, x)
+# jacobian of the outputs with respect to the inputs, expressed as a matrix
+dYdX = jacobian!(sellar, X)
 
 # combined evaluation of outputs and jacobian
-y, dydx = outputs_and_jacobian!(sellar, x)
+Y, dYdX = outputs_and_jacobian!(sellar, X)
 
 nothing #hide
 ```
+
+If the vectorized input/output format is inconvenient, CoupledSystem's provides utility functions which may be used to combine inputs and/or separate outputs.
+
+```@example guide
+# define inputs as variables
+x_test = rand()
+z1_test = rand()
+z2_test = rand()
+
+# sellar problem vector input
+x_sys = combine((x_test, z1_test, z2_test))
+
+# sellar problem vector output
+y_sys = outputs!(sellar, x_sys)
+
+# sellar problem variable outputs (in order)
+f, g1, g2 = separate(outputs_sellar, y_sys)
+```
+
+The position of each output corresponds to the
+
+Inputs and outputs from these functions correspond to CoupledSystem's internal representation of each components as vector valued functions with the
 
 ## Verifying Derivatives
 
@@ -261,9 +297,9 @@ Derivatives can be verified easily using finite differencing.
 using FiniteDiff
 
 # Verify using forward finite differencing
-f = (x) -> outputs(sellar, x)
-dydx_fd = FiniteDiff.finite_difference_jacobian(f, x)
-println("Maximum Error: ", maximum(abs.(dydx - dydx_fd)))
+f = (X) -> outputs(sellar, X)
+dYdX_fd = FiniteDiff.finite_difference_jacobian(f, X)
+println("Maximum Error: ", maximum(abs.(dYdX - dYdX_fd)))
 nothing #hide
 ```
 

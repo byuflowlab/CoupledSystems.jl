@@ -2,33 +2,89 @@ using CoupledSystems
 using ForwardDiff
 using Test
 
+@testset "NamedVar" begin
+
+    # default values for each variable
+    x1 = rand()
+    y1 = rand(10)
+    z1 = rand(10, 10)
+
+    # define each named variable
+    @named x = x1
+    @named y = y1
+    @named z = z1
+
+    # create tuple of named variables
+    vars = (x, y, z)
+
+    # combine values into a single vector
+    v = combine(vars)
+
+    # separate variables
+    x2, y2, z2 = separate(vars, v)
+
+    # check that variable values didn't change
+    @test x1 == x2
+    @test y1 == y2
+    @test z1 == z2
+
+end
+
 @testset "ExplicitComponent" begin
 
     # This uses the paraboloid example from OpenMDAO
 
+    # define variables and set defaults
+    @named x = 0.0
+    @named y = 0.0
+    @named fxy = 0.0
+
+    # construct paraboloid function (and define inputs and outputs)
+    fin = (x, y)
+    fout = (fxy,)
+    foutin = ()
+    func = (x,y) -> (x - 3)^2 + x*y + (y + 4)^2 - 3
+
+    # construct optional component output function
     f! = function(y, x)
         y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
         return y
     end
+
+    # construct optional component jacobian function
     df! = function(dydx, x)
         dydx[1,1] = 2*(x[1]-3) + x[2]
         dydx[1,2] = x[1] + 2*(x[2]+4)
         return dydx
     end
+
+    # construct optional combined component output and jacobian function
     fdf! = function(y, dydx, x)
         f!(y, x)
         df!(dydx, x)
         return y, dydx
     end
-    x = zeros(2)
-    y = zeros(1)
-    dydx = zeros(1,2)
-    comp1 = ExplicitComponent(x, y; f=f!, df=df!, fdf=fdf!, dydx=dydx)
-    comp2 = ExplicitComponent(x, y; f=f!, df=df!, fdf=fdf!)
-    comp3 = ExplicitComponent(x, y; f=f!, df=df!)
-    comp4 = ExplicitComponent(x, y; fdf=fdf!)
 
-    for comp in [comp2, comp3, comp4]
+    # define optional jacobian matrix storage
+    dydx = zeros(1,2)
+
+    # test a bunch of different constructors
+    comp1 = ExplicitComponent(func, fin, fout, foutin; f=f!, df=df!, fdf=fdf!, dydx=dydx)
+    comp2 = ExplicitComponent(func, fin, fout, foutin; df=df!, fdf=fdf!, dydx=dydx)
+    comp3 = ExplicitComponent(func, fin, fout, foutin; df=df!, fdf=fdf!)
+    comp4 = ExplicitComponent(func, fin, fout, foutin; df=df!)
+    comp5 = ExplicitComponent(func, fin, fout, foutin; fdf=fdf!)
+    comp6 = ExplicitComponent(fin, fout, foutin; f=f!, df=df!, fdf=fdf!, dydx=dydx)
+    comp7 = ExplicitComponent(fin, fout, foutin; f=f!, df=df!, fdf=fdf!)
+    comp8 = ExplicitComponent(fin, fout, foutin; f=f!, df=df!)
+    comp9 = ExplicitComponent(fin, fout, foutin; fdf=fdf!)
+
+    # make sure all the constructors yield the same results
+    for comp in [comp2, comp3, comp4, comp5, comp6, comp7, comp8, comp9]
+
+        # storage for outputs and jacobian
+        y = zeros(1)
+        dydx = zeros(1,2)
 
         x = rand(2)
         @test outputs(comp1, x) == outputs(comp, x)
@@ -57,30 +113,47 @@ end
 
     # This uses the paraboloid example from OpenMDAO
 
+    # define variables and set defaults
+    @named x = 0.0
+    @named y = 0.0
+    @named fxy = 0.0
+
+    # construct template function
+    fin = (x, y)
+    fout = (fxy,)
+    foutin = ()
+    func = (x,y) -> (x - 3)^2 + x*y + (y + 4)^2 - 3
+
+    # construct optional component output function
     f! = function(y, x)
         y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
         return y
     end
+
+    # construct optional component jacobian function
     df! = function(dydx, x)
         dydx[1,1] = 2*(x[1]-3) + x[2]
         dydx[1,2] = x[1] + 2*(x[2]+4)
         return dydx
     end
+
+    # construct optional combined component output and jacobian function
     fdf! = function(y, dydx, x)
         f!(y, x)
         df!(dydx, x)
         return y, dydx
     end
+
     x = zeros(2)
     y = zeros(1)
     dydx = zeros(1,2)
-    comp = ExplicitComponent(x, y; f=f!, df=df!, fdf=fdf!)
+    comp = ExplicitComponent(func, fin, fout, foutin; f=f!, df=df!, fdf=fdf!)
 
-    comp_FAD = ExplicitComponent(x, y; f=f!, deriv=ForwardAD())
-    comp_RAD = ExplicitComponent(x, y; f=f!, deriv=ReverseAD())
-    comp_FFD = ExplicitComponent(x, y; f=f!, deriv=ForwardFD())
-    comp_CFD = ExplicitComponent(x, y; f=f!, deriv=CentralFD())
-    comp_XFD = ExplicitComponent(x, y; f=f!, deriv=ComplexFD())
+    comp_FAD = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
+    comp_RAD = ExplicitComponent(func, fin, fout, foutin; deriv=ReverseAD())
+    comp_FFD = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardFD())
+    comp_CFD = ExplicitComponent(func, fin, fout, foutin; deriv=CentralFD())
+    comp_XFD = ExplicitComponent(func, fin, fout, foutin; deriv=ComplexFD())
 
     for dcomp in [comp_FAD, comp_RAD, comp_FFD, comp_CFD, comp_XFD]
 
