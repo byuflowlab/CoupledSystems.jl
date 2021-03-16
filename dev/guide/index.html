@@ -146,12 +146,12 @@ X = combine((x_test, z1_test, z2_test))
 Y, dYdX = outputs_and_jacobian!(sellar, X)
 
 # sellar problem variable outputs (in order)
-f, g1, g2 = separate(outputs_sellar, Y)</code></pre><pre class="documenter-example-output">(1.9999465040039304, 2.2442231033961595, -22.16784309547779)</pre><h2 id="Verifying-Derivatives"><a class="docs-heading-anchor" href="#Verifying-Derivatives">Verifying Derivatives</a><a id="Verifying-Derivatives-1"></a><a class="docs-heading-anchor-permalink" href="#Verifying-Derivatives" title="Permalink"></a></h2><p>Derivatives can be verified easily using finite differencing.</p><pre><code class="language-julia">using FiniteDiff
+f, g1, g2 = separate(outputs_sellar, Y)</code></pre><pre class="documenter-example-output">(2.2946512066066598, 1.9820550669799828, -21.50508278832778)</pre><h2 id="Verifying-Derivatives"><a class="docs-heading-anchor" href="#Verifying-Derivatives">Verifying Derivatives</a><a id="Verifying-Derivatives-1"></a><a class="docs-heading-anchor-permalink" href="#Verifying-Derivatives" title="Permalink"></a></h2><p>Derivatives can be verified easily using finite differencing.</p><pre><code class="language-julia">using FiniteDiff
 
 # Verify using forward finite differencing
 f = (X) -&gt; outputs(sellar, X)
 dYdX_fd = FiniteDiff.finite_difference_jacobian(f, X)
-println(&quot;Maximum Error: &quot;, maximum(abs.(dYdX - dYdX_fd)))</code></pre><pre class="documenter-example-output">Maximum Error: 0.00021746831698932212</pre><p>For an even better derivative check, the jacobians can be verified against exact derivatives computed using forward mode automatic differentiation.</p><pre><code class="language-julia">using ForwardDiff
+println(&quot;Maximum Error: &quot;, maximum(abs.(dYdX - dYdX_fd)))</code></pre><pre class="documenter-example-output">Maximum Error: 0.00031079346721774037</pre><p>For an even better derivative check, the jacobians can be verified against exact derivatives computed using forward mode automatic differentiation.</p><pre><code class="language-julia">using ForwardDiff
 
 # Verify using forward mode automatic differentiation
 dYdX_ad = ForwardDiff.jacobian(f, X)
