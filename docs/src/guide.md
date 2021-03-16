@@ -283,6 +283,8 @@ Y, dYdX = outputs_and_jacobian!(sellar, X)
 
 # sellar problem variable outputs (in order)
 f, g1, g2 = separate(outputs_sellar, Y)
+
+nothing #hide
 ```
 
 ## Verifying Derivatives
