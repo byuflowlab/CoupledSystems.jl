@@ -156,10 +156,6 @@ ExplicitComponent(fin, fout, foutin; kwargs...) = ExplicitComponent(nothing, fin
 
 Couple an implicit component with a solver to construct an explicit component.
 
-For computational efficiency when computing derivatives it is recommended that
-the version of this function which incorporates an output component is used
-rather than this one.
-
  # Arguments:
  - `component`: Implicit component or system to convert to an explicit component
  - `fout`: (optional) Tuple of named variables (see [`NamedVar`](@ref))
@@ -171,9 +167,13 @@ rather than this one.
  - `dydx`: Provides size and type of jacobian output, otherwise it will be
         allocated based on the inputs, outputs, and the sparsity structure in `sparsity`
  - `sparsity = DensePattern()`: Defines the sparsity structure of the jacobian if `dydx` is not provided
+ - `mode`: Mode in which to compute the analytic sensitivity equations.  May be
+    either [`Direct()`](@ref) or [`Adjoint()`](@ref).  Defaults to `Direct()` if
+    the number of inputs is less than the number of outputs and `Adjoint()`
+    otherwise.
 """
 function ExplicitComponent(component::AbstractImplicitComponent, argout=component.argout; solver=Newton(),
-    dydx = nothing, sparsity=DensePattern(), mode=Adjoint())
+    dydx = nothing, sparsity=DensePattern(), mode=nothing)
 
     # input variables
     argin = component.argin
@@ -192,6 +192,11 @@ function ExplicitComponent(component::AbstractImplicitComponent, argout=componen
     x_df = NaN .* inputs(component) # inputs are the same as component
     y = NaN .* combine(argout) # outputs correspond to specified outputs
     dydx = isnothing(dydx) ? allocate_jacobian(x_f, y, sparsity) : NaN .* dydx
+
+    # choose mode in which to apply analytic sensitivity equations (if not specified)
+    if isnothing(mode)
+        mode = ifelse(length(x_f) < length(y), Direct(), Adjoint())
+    end
 
     # NOTE: xcache stores the current inputs to the solver
     # As xcache is updated, the function upon which the solver operates is
@@ -278,12 +283,14 @@ output/state variables of `component` .
  - `dydx`: Provides size and type of jacobian output, otherwise it will be
         allocated based on the inputs, outputs, and the sparsity structure in `sparsity`
  - `sparsity = DensePattern()`: Defines the sparsity structure of the jacobian if `dydx` is not provided
- - `mode = Adjoint()`: Mode in which to compute the derivatives.  Choose between
-    [`Direct()`](@ref) and [`Adjoint()`](@ref).
+ - `mode`: Mode in which to compute the analytic sensitivity equations.  May be
+    either [`Direct()`](@ref) or [`Adjoint()`](@ref).  Defaults to `Direct()` if
+    the number of inputs is less than the number of outputs and `Adjoint()`
+    otherwise.
 """
 function ExplicitComponent(component::AbstractImplicitComponent, output_component::AbstractExplicitComponent;
     solver=Newton(), u0=rand(length(component.y_f)), dydx = nothing,
-    sparsity=DensePattern(), mode = Adjoint())
+    sparsity=DensePattern(), mode = nothing)
 
     # input variables
     argin = component.argin
@@ -312,6 +319,11 @@ function ExplicitComponent(component::AbstractImplicitComponent, output_componen
     x_df = NaN .* inputs(component)
     y = NaN .* outputs(output_component)
     dydx = isnothing(dydx) ? allocate_jacobian(x_f, y, sparsity) : NaN .* dydx
+
+    # choose mode in which to apply analytic sensitivity equations (if not specified)
+    if isnothing(mode)
+        mode = ifelse(length(x_f) < length(y), Direct(), Adjoint())
+    end
 
     # input and state variable dimensions
     nx = length(component.x_f)
@@ -464,10 +476,12 @@ components.
     the sparsity structure.
  - `sparsity`: Sparsity structure of the system jacobian matrix
  - `mode`: Mode used to calculate system derivatives using the chain rule.  May
-    be either [`Forward()`](@ref) or [`Reverse()`](@ref), defaults to [`Reverse()`](@ref)
+    be either [`Forward()`](@ref) or [`Reverse()`](@ref), defaults to
+    [`Forward`](@ref) if the number of outputs exceeds the number of inputs and
+    [`Reverse()`](@ref) otherwise.
 """
 function ExplicitSystem(components, argin, argout;
-    dydx = nothing, mode=Reverse(), sparsity=DensePattern())
+    dydx = nothing, sparsity=DensePattern(), mode=nothing)
 
     # number of components
     nc = length(components)
@@ -475,6 +489,11 @@ function ExplicitSystem(components, argin, argout;
     # construct input and output vectors
     x0 = combine(argin)
     y0 = combine(argout)
+
+    # choose mode in which to apply analytic sensitivity equations (if not specified)
+    if isnothing(mode)
+        mode = ifelse(length(x0) < length(y0), Forward(), Reverse())
+    end
 
     # construct system mapping
     component_input_mapping = system_component_mapping(components, argin)
