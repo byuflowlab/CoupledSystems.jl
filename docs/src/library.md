@@ -7,6 +7,17 @@ Depth = 3
 
 ## Public API
 
+### System Variables
+```@docs
+@var
+NamedVar
+name
+value
+combine
+combine!
+separate
+```
+
 ### Differentiation Methods
 
 ```@docs
@@ -90,6 +101,13 @@ residuals_and_jacobians
 residuals_and_jacobians!
 residuals_and_jacobians!!
 residuals_and_jacobians!!!
+```
+
+### Convenience Functions
+```
+combine
+separate
+
 ```
 
 ## Private API

@@ -7,12 +7,13 @@ using NLsolve
 
 import Base.setindex, Base.front, Base.tail
 
+export @var
 export NamedVar
 export name
 export value
 export combine
+export combine!
 export separate
-export @var
 
 export AbstractDiffMethod
 export AbstractAD, ForwardAD, ReverseAD
