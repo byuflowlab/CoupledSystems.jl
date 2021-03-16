@@ -8,7 +8,7 @@
 
 Author: Taylor McDonnell
 
-**CoupledSystems** is a modeling framework for easily modeling and obtaining exact derivatives of arbitrarily complex coupled systems.  It is similar in nature to OpenMDAO, but relies on a different theoretical foundation for propagating derivatives (and is written in Julia!).  It is also designed to automatically interface with a variety of packages in the Julia ecosystem to make obtaining derivatives and solving nonlinear systems of equations relatively painless.
+**CoupledSystems** is a modeling framework for easily modeling and obtaining exact derivatives of arbitrarily complex coupled systems.  It is similar in nature to [OpenMDAO](https://openmdao.org/), but relies on a different theoretical foundation for propagating derivatives (and is written in Julia!).  It is also designed to automatically interface with a variety of packages in the Julia ecosystem to make obtaining derivatives and solving nonlinear systems of equations relatively painless.
 
 ## Package Features
  - Can be used to:
