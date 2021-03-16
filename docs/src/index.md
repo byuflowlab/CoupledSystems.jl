@@ -33,6 +33,7 @@ Author: Taylor McDonnell
       - Direct
       - Adjoint
  - Multiple solvers available for solving implicit systems
+    - Trust Region (Implemented using [NLsolve](https://github.com/JuliaNLSolvers/NLsolve.jl))
     - Newton's Method with Line Search (Implemented using [NLsolve](https://github.com/JuliaNLSolvers/NLsolve.jl))
     - User-defined solvers
  - Efficient and convenient calling interface
