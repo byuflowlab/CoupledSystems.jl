@@ -12,7 +12,7 @@ Our goal is to manipulate this problem in order to create a single explicit func
 
 ## Defining System Variables
 
-Let's start by loading the package and defining the system variables.  This can be done with the ``@var`` macro.
+Let's start by loading the package and defining the system variables.  This can be done with the `@var` macro.
 
 ```@example guide
 using CoupledSystems
