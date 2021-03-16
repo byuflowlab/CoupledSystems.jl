@@ -225,16 +225,20 @@ end
 function create_output_jacobian_functions(f!, x0, y0, dtype::AbstractFD, sp::DensePattern)
 
     # Construct FiniteDiff Cache
+    xcache = copy(x0)
+    ycache = copy(y0) # this needs to be updated before calling FiniteDiff
+    ycache1 = copy(y0)
     fdtype = finitediff_type(dtype)
-    cache = FiniteDiff.JacobianCache(copy(x0), copy(y0), copy(y0), fdtype)
+    cache = FiniteDiff.JacobianCache(xcache, ycache, ycache1, fdtype)
 
     # define jacobian function
-    ycache = copy(y0)
     df! = function(dydx, x)
-        if eltype(x) <: eltype(ycache)
+        TF = promote_type(eltype(x), eltype(ycache))
+        if TF <: eltype(ycache)
             # don't allocate because we can store the result
             f!(ycache, x)
-            FiniteDiff.finite_difference_jacobian!(dydx, f!, x, cache, ycache)
+            copyto!(xcache, x)
+            FiniteDiff.finite_difference_jacobian!(dydx, f!, xcache, cache, ycache)
         else
             # allocate because we can't store the result
             FiniteDiff.finite_difference_jacobian!(dydx, f!, x)
@@ -246,9 +250,12 @@ function create_output_jacobian_functions(f!, x0, y0, dtype::AbstractFD, sp::Den
     # define combined output and jacobian function
     fdf! = function(y, dydx, x)
         f!(y, x)
-        if eltype(y) <: eltype(ycache)
+        TF = promote_type(eltype(y), eltype(ycache))
+        if TF <: eltype(ycache)
             # don't allocate because we can store the result
-            FiniteDiff.finite_difference_jacobian!(dydx, f!, x, cache, y)
+            copyto!(xcache, x)
+            copyto!(ycache, y)
+            FiniteDiff.finite_difference_jacobian!(dydx, f!, xcache, cache)
         else
             # allocate because we can't store the result
             FiniteDiff.finite_difference_jacobian!(dydx, f!, x)
@@ -289,23 +296,27 @@ end
 function create_output_jacobian_functions(f!, x0, y0, dtype::AbstractFD, sp::SparsePattern)
 
     # Construct FiniteDiff Cache
-    fdtype = FD <: CentralFD ? Val(:central) : Val(:reverse)
-    cache = FiniteDiff.JacobianCache(copy(x0), copy(y0), copy(y0), fdtype)
+    xcache = copy(x0)
+    ycache = copy(y0)
+    ycache1 = copy(y0)
+    fdtype = finitediff_type(dtype)
     sparsity = sparse(sp.rows, sp.cols, ones(length(sp.rows)))
     colorvec = SparseDiffTools.matrix_colors(sparsity)
+    cache = FiniteDiff.JacobianCache(xcache, ycache, ycache1, fdtype, sparsity,
+        colorvec)
 
     # define jacobian function
-    ycache = copy(y0)
     df! = function(dydx, x)
         f!(ycache, x)
-        FiniteDiff.finite_difference_jacobian!(dydx, f!, x, cache, ycache)
+        FiniteDiff.finite_difference_jacobian!(dydx, f!, x, cache)
         return dydx
     end
 
     # define combined output and jacobian function
     fdf! = function(y, dydx, x)
         f!(y, x)
-        FiniteDiff.finite_difference_jacobian!(dydx, f!, x, cache, y)
+        copyto!(ycache, y)
+        FiniteDiff.finite_difference_jacobian!(dydx, f!, x, cache)
         return y, dydx
     end
 
@@ -394,37 +405,44 @@ function create_residual_input_jacobian_functions(f!, x0, y0, r0, dtype::Abstrac
     fx! = (r, x) -> f!(r, x, ycache)
 
     # Construct FiniteDiff Cache
+    xcache = copy(x0)
+    rcache = copy(r0) # this needs to be updated
+    rcache1 = copy(r0)
     fdtype = finitediff_type(dtype)
-    cache = FiniteDiff.JacobianCache(copy(x0), copy(r0), copy(r0), fdtype)
+    cache = FiniteDiff.JacobianCache(xcache, rcache, rcache1, fdtype)
 
     # define jacobian function
-    rcache = copy(r0)
     dfdx! = function(drdx, x, y)
-        if eltype(y) <: eltype(ycache)
+        TF = promote_type(eltype(y), eltype(ycache))
+        if TF <: eltype(ycache)
             # don't allocate because we can store the result
-            copyto!(ycache, y)
             f!(rcache, x, y)
-            FiniteDiff.finite_difference_jacobian!(drdx, fx!, x, cache, rcache)
+            copyto!(xcache, x)
+            copyto!(ycache, y)
+            FiniteDiff.finite_difference_jacobian!(drdx, fx!, xcache, cache)
         else
             # allocate because we can't store the result
             fx_new! = (r, x) -> f!(r, x, y)
-            FiniteDiff.finite_difference_jacobian!(drdx, fx!, x)
+            FiniteDiff.finite_difference_jacobian!(drdx, fx_new!, x, fdtype)
         end
         return drdx
     end
 
     # define combined output and jacobian function
     fdfdx! = function(r, drdx, x, y)
-        if eltype(y) <: eltype(ycache)
+        TF = promote_type(eltype(y), eltype(ycache))
+        if TF <: eltype(ycache)
             # don't allocate because we can store the result
-            copyto!(ycache, y)
             f!(r, x, y)
-            FiniteDiff.finite_difference_jacobian!(drdx, fx!, x, cache, r)
+            copyto!(xcache, x)
+            copyto!(ycache, y)
+            copyto!(rcache, r)
+            FiniteDiff.finite_difference_jacobian!(drdx, fx!, xcache, cache)
         else
             # allocate because we can't store the result
             fx_new! = (r, x) -> f!(r, x, y)
             f!(r, x, y)
-            FiniteDiff.finite_difference_jacobian!(drdx, fx_new!, x)
+            FiniteDiff.finite_difference_jacobian!(drdx, fx_new!, x, fdtype)
         end
         return r, drdx
     end
@@ -472,25 +490,29 @@ function create_residual_input_jacobian_functions(f!, x0, y0, r0, dtype::Abstrac
     fx! = (r, x) -> f!(r, x, ycache)
 
     # Construct FiniteDiff Cache
+    xcache = copy(x0)
+    rcache = copy(r0) # this needs to be updated before calling FiniteDiff
+    rcache1 = copy(r0)
     fdtype = finitediff_type(dtype)
-    cache = FiniteDiff.JacobianCache(copy(x0), copy(r0), copy(r0), fdtype)
     sparsity = sparse(sp.rows, sp.cols, ones(length(sp.rows)))
     colorvec = SparseDiffTools.matrix_colors(sparsity)
+    cache = FiniteDiff.JacobianCache(xcache, rcache, rcache1, fdtype, sparsity,
+        colorvec)
 
     # define jacobian function
-    rcache = copy(r0)
     dfdx! = function(drdx, x, y)
         copyto!(ycache, y)
         f!(rcache, x, y)
-        FiniteDiff.finite_difference_jacobian!(drdx, fx!, x, cache, rcache)
+        FiniteDiff.finite_difference_jacobian!(drdx, fx!, x, cache)
         return drdx
     end
 
     # define combined output and jacobian function
     fdfdx! = function(r, drdx, x, y)
-        copyto!(ycache, y)
         f!(r, x, y)
-        FiniteDiff.finite_difference_jacobian!(drdx, fx!, x, cache, r)
+        copyto!(ycache, y)
+        copyto!(rcache, r)
+        FiniteDiff.finite_difference_jacobian!(drdx, fx!, x, cache)
         return r, drdx
     end
 
@@ -579,37 +601,44 @@ function create_residual_output_jacobian_functions(f!, x0, y0, r0, dtype::Abstra
     fy! = (r, y) -> f!(r, xcache, y)
 
     # Construct FiniteDiff Cache
+    ycache = copy(y0)
+    rcache = copy(r0) # this needs to be updated
+    rcache1 = copy(r0)
     fdtype = finitediff_type(dtype)
-    cache = FiniteDiff.JacobianCache(copy(y0), copy(r0), copy(r0), fdtype)
+    cache = FiniteDiff.JacobianCache(ycache, rcache, rcache1, fdtype)
 
     # define jacobian function
-    rcache = copy(r0)
     dfdy! = function(drdy, x, y)
-        if eltype(x) <: eltype(xcache)
+        TF = promote_type(eltype(y), eltype(ycache))
+        if TF <: eltype(xcache)
             # don't allocate because we can store the result
-            copyto!(xcache, x)
             f!(rcache, x, y)
-            FiniteDiff.finite_difference_jacobian!(drdy, fy!, y, cache, rcache)
+            copyto!(xcache, x)
+            copyto!(ycache, y)
+            FiniteDiff.finite_difference_jacobian!(drdy, fy!, ycache, cache)
         else
             # allocate because we can't store the result
             fy_new! = (r, y) -> f!(r, x, y)
-            FiniteDiff.finite_difference_jacobian!(drdy, fy!, y)
+            FiniteDiff.finite_difference_jacobian!(drdy, fy!, y, fdtype)
         end
         return drdy
     end
 
     # define combined output and jacobian function
     fdfdy! = function(r, drdy, x, y)
-        if eltype(x) <: eltype(xcache)
+        TF = promote_type(eltype(x), eltype(xcache))
+        if TF <: eltype(xcache)
             # don't allocate because we can store the result
-            copyto!(xcache, x)
             f!(r, x, y)
-            FiniteDiff.finite_difference_jacobian!(drdy, fy!, y, cache, r)
+            copyto!(xcache, x)
+            copyto!(ycache, y)
+            copyto!(rcache, r)
+            FiniteDiff.finite_difference_jacobian!(drdy, fy!, ycache, cache)
         else
             # allocate because we can't store the result
             fy_new! = (r, y) -> f!(r, x, y)
             f!(r, x, y)
-            FiniteDiff.finite_difference_jacobian!(drdy, fy!, y)
+            FiniteDiff.finite_difference_jacobian!(drdy, fy!, y, fdtype)
         end
         return r, drdy
     end
@@ -657,25 +686,29 @@ function create_residual_output_jacobian_functions(f!, x0, y0, r0, dtype::Abstra
     fy! = (r, y) -> f!(r, xcache, y)
 
     # Construct FiniteDiff Cache
+    ycache = copy(y0)
+    rcache = copy(r0) # this needs to be updated before calling FiniteDiff
+    rcache1 = copy(r0)
     fdtype = finitediff_type(dtype)
-    cache = FiniteDiff.JacobianCache(copy(y0), copy(r0), copy(r0), fdtype)
     sparsity = sparse(sp.rows, sp.cols, ones(length(sp.rows)))
     colorvec = SparseDiffTools.matrix_colors(sparsity)
+    cache = FiniteDiff.JacobianCache(ycache, rcache, rcache1, fdtype, sparsity,
+        colorvec)
 
     # define jacobian function
-    rcache = copy(r0)
     dfdy! = function(drdy, x, y)
         copyto!(xcache, x)
         f!(rcache, x, y)
-        FiniteDiff.finite_difference_jacobian!(drdy, fy!, y, cache, rcache)
+        FiniteDiff.finite_difference_jacobian!(drdy, fy!, y, cache)
         return drdy
     end
 
     # define combined output and jacobian function
     fdfdy! = function(r, drdy, x, y)
-        copyto!(xcache, x)
         f!(r, x, y)
-        FiniteDiff.finite_difference_jacobian!(drdy, fy!, y, cache, r)
+        copyto!(xcache, x)
+        copyto!(rcache, r)
+        FiniteDiff.finite_difference_jacobian!(drdy, fy!, y, cache)
         return r, drdy
     end
 

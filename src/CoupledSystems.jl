@@ -5,6 +5,15 @@ using SparseArrays, SparseDiffTools
 using FiniteDiff, ForwardDiff, ReverseDiff, DiffResults
 using NLsolve
 
+import Base.setindex, Base.front, Base.tail
+
+export NamedVar
+export name
+export value
+export combine
+export separate
+export @var
+
 export AbstractDiffMethod
 export AbstractAD, ForwardAD, ReverseAD
 export AbstractFD, ForwardFD, CentralFD, ComplexFD
@@ -28,6 +37,9 @@ export residual_output_jacobian, residual_output_jacobian!, residual_output_jaco
 export residuals_and_input_jacobian, residuals_and_input_jacobian!, residuals_and_input_jacobian!!, residuals_and_input_jacobian!!!
 export residuals_and_output_jacobian, residuals_and_output_jacobian!, residuals_and_output_jacobian!!, residuals_and_output_jacobian!!!
 export residuals_and_jacobians, residuals_and_jacobians!, residuals_and_jacobians!!, residuals_and_jacobians!!!
+
+# named variables
+include("variables.jl")
 
 # functions for computing derivatives
 include("derivatives.jl")

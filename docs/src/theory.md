@@ -10,7 +10,7 @@ Explicit components may easily be converted to implicit components by subtractin
 ```
 Implicit components, on the other hand, may be effectively "seen" as explicit components once they are coupled with a solver which converges their residual equations to zero.  For example, while a computational fluid dynamics program internally solves an implicit system of equations to obtain fluid properties throughout a domain, programs which call the same CFD package effectively see the CFD package as an explicit component from which they expect to receive a converged set of outputs ``y`` given a set of inputs ``x``.
 
-There is an important caveat in the effective conversion from implicit to explicit components.  While explicit components inherently contain a one-to-one mapping between inputs and outputs, the same is not true for implicit components.  Multiple sets of outputs may be able to satisfy the residual equations of an implicit component for a given set of inputs.  If a one-to-one mapping does not exist for a given implicit component, then the outputs from that component are dependent on the choice of solver and initial output guess in addition to the inputs (if a solution exists at all!).
+There is an important caveat in the effective conversion from implicit to explicit components.  While explicit components inherently contain a one-to-one mapping between inputs and outputs, the same is not true for implicit components.  Multiple sets of outputs may be able to satisfy the residual equations of an implicit component for a given set of inputs.  If a one-to-one mapping does not exist for a given implicit component, then the outputs from that component are dependent on the choice of solver and initial output guess, in addition to the inputs (if a solution exists at all!).
 
 ![](explicit-implicit.svg)
 
@@ -54,7 +54,7 @@ The computational cost of applying the chain rule scales linearly with either th
 
 ## Implicit Systems
 
-We define an implicit system as a system containing implicit components where the system's residuals and outputs correspond to each of its subcomponents residuals and outputs concatenated.  The inputs to each subcomponent may correspond to the system inputs and/or the outputs of any other subcomponent.  An illustration of an implicit system is shown in the following diagram.
+We define an implicit system as a system containing implicit components where the system's residuals and outputs correspond to each of its subcomponent's residuals and outputs concatenated.  The inputs to each subcomponent may correspond to the system inputs and/or the outputs of any other subcomponent.  An illustration of an implicit system is shown in the following diagram.
 
 ![](implicit-system.svg)
 
@@ -72,4 +72,4 @@ The cost of applying the analytic sensitivity equations scales linearly with the
 
 ## Reducing Systems of Components to a Single Explicit Component
 
-Any system composed of explicit and implicit components may be reduced to a single explicit component.  For example, all components may be converted into implicit components, combined into a single implicit system, and then converted to an explicit component.  Alternatively, interdependent components may be combined together into implicit systems which may then be converted into explicit components and then combined with other explicit components into an explicit system.  While the result of the different approaches is the same, the computationally efficiency may vary.  For example, the latter approach for combining components together is likely more computationally efficient than the former approach.   In any case, once the system has been reduced into a single explicit component, that component may be used to easily obtain outputs and derivatives of the outputs with respect to the inputs given a set of inputs.
+Any system composed of explicit and implicit components may be reduced to a single explicit component.  For example, all components may be converted into implicit components, combined into a single implicit system, and then converted to an explicit component.  Alternatively, interdependent components may be combined together into implicit systems which may then be converted into explicit components and then combined with other explicit components into an explicit system.  While the result of the different approaches is the same, the computational efficiency may vary.  For example, the latter approach for combining components together is likely more computationally efficient than the former approach.   In any case, once the system has been reduced into a single explicit component using CoupledSystems, that component may be used to easily obtain outputs and derivatives of the outputs given a set of inputs.

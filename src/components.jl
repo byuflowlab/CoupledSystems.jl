@@ -20,7 +20,7 @@ Supertype for components defined by the vector valued residual function `0 = f(x
 abstract type AbstractImplicitComponent <: AbstractComponent end
 
 """
-    ExplicitComponent{TX, TY, TJ} <: AbstractExplicitComponent
+    ExplicitComponent{TX, TY, TJ, TI, TO} <: AbstractExplicitComponent
 
 System component defined by the explicit vector-valued output function: `y = f(x)`
 
@@ -32,8 +32,10 @@ System component defined by the explicit vector-valued output function: `y = f(x
  - `x_df::TX`: Inputs used to evaluate the jacobian
  - `y::TY`: Outputs
  - `dydx::TJ`: Jacobian
+ - `argin::TI`: Tuple of named inputs to output function, defines size, type, and default values of inputs
+ - `argout::TO`: Tuple of named outputs from output function, defines size and type of outputs
 """
-struct ExplicitComponent{TX, TY, TJ} <: AbstractExplicitComponent
+struct ExplicitComponent{TX, TY, TJ, TI, TO} <: AbstractExplicitComponent
     f
     df
     fdf
@@ -41,6 +43,8 @@ struct ExplicitComponent{TX, TY, TJ} <: AbstractExplicitComponent
     x_df::TX
     y::TY
     dydx::TJ
+    argin::TI
+    argout::TO
 end
 
 """
@@ -59,9 +63,11 @@ sequentially.
  - `x_df::TX`: Inputs used to evaluate the system jacobian
  - `y::TY`: Storage for the system outputs
  - `dydx::TJ`: Storage for the system jacobian
+ - `argin::TI`: Tuple of named inputs to output function, defines size, type, and default values of inputs
+ - `argout::TO`: Tuple of named outputs from output function, defines size and type of outputs
  - `mode::TD`: Default direction in which to apply the chain rule (`Forward()` or `Reverse()`)
 """
-struct ExplicitSystem{TC, TX, TY, TJ, TD} <: AbstractExplicitComponent
+struct ExplicitSystem{TC, TX, TY, TJ, TI, TO, TD} <: AbstractExplicitComponent
     components::TC
     input_mapping::Vector{NTuple{2,Vector{Int}}}
     component_output_mapping::Vector{Vector{NTuple{2,Vector{Int}}}}
@@ -71,11 +77,13 @@ struct ExplicitSystem{TC, TX, TY, TJ, TD} <: AbstractExplicitComponent
     x_df::TX
     y::TY
     dydx::TJ
+    argin::TI
+    argout::TO
     mode::TD
 end
 
 """
-    ImplicitComponent{TX, TY, TR, TDRX, TDRY} <: AbstractImplicitComponent
+    ImplicitComponent{TX, TY, TR, TDRX, TDRY, TI, TO} <: AbstractImplicitComponent
 
 System component defined by the vector-valued residual function: `0 = f(x, y)`
 
@@ -95,8 +103,10 @@ System component defined by the vector-valued residual function: `0 = f(x, y)`
  - `r::TR`: cache for residual`
  - `drdx::TDRX`: cache for residual jacobian with respect to `x`
  - `drdy::TDRY`: cache for residual jacobian with respect to `y`
+ - `argin::TI`: Tuple of named inputs to output function, defines size, type, and default values of inputs
+ - `argout::TO`: Tuple of named outputs from output function, defines size, type, and default values of outputs
 """
-struct ImplicitComponent{TX, TY, TR, TDRX, TDRY} <: AbstractImplicitComponent
+struct ImplicitComponent{TX, TY, TR, TDRX, TDRY, TI, TO} <: AbstractImplicitComponent
     f
     dfdx
     dfdy
@@ -112,10 +122,12 @@ struct ImplicitComponent{TX, TY, TR, TDRX, TDRY} <: AbstractImplicitComponent
     r::TR
     drdx::TDRX
     drdy::TDRY
+    argin::TI
+    argout::TO
 end
 
 """
-    ImplicitSystem{TC, TX, TY, TR, TDRX, TDRY} <: AbstractImplicitComponent
+    ImplicitSystem{TC, TX, TY, TR, TDRX, TDRY, TI, TO} <: AbstractImplicitComponent
 
 Implicit system constructed from interdependent explicit and/or implicit system
 components.
@@ -132,9 +144,11 @@ components.
  - `r::TR`: cache for residual`
  - `drdx::TDRX`: cache for residual jacobian with respect to `x`
  - `drdy::TDRY`: cache for residual jacobian with respect to `y`
+ - `argin::TI`: Tuple of named inputs to output function, defines size, type, and default values of inputs
+ - `argout::TO`: Tuple of named outputs from output function, defines size, type, and default values of outputs
  - `idx::Vector{Int}`: Index used for accessing outputs/residuals for each component
 """
-struct ImplicitSystem{TC, TX, TY, TR, TDRX, TDRY} <: AbstractImplicitComponent
+struct ImplicitSystem{TC, TX, TY, TR, TDRX, TDRY, TI, TO} <: AbstractImplicitComponent
     components::TC
     component_input_mapping::Vector{Vector{NTuple{2,Int}}}
     x_f::TX
@@ -146,6 +160,8 @@ struct ImplicitSystem{TC, TX, TY, TR, TDRX, TDRY} <: AbstractImplicitComponent
     r::TR
     drdx::TDRX
     drdy::TDRY
+    argin::TI
+    argout::TO
     idx::Vector{Int}
 end
 
