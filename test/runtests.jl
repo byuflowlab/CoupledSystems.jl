@@ -626,6 +626,11 @@ end
     comp_CFD = ImplicitComponent(func, fin, fout; xderiv=CentralFD(), yderiv=CentralFD())
     comp_XFD = ImplicitComponent(func, fin, fout; xderiv=ComplexFD(), yderiv=ComplexFD())
 
+    # storage for outputs
+    r = zeros(1)
+    drdx = zeros(1, 3)
+    drdy = zeros(1, 1)
+
     for dcomp in [comp_FAD, comp_RAD, comp_FFD, comp_CFD, comp_XFD]
 
         x = rand(3)
@@ -898,4 +903,145 @@ end
     @test isapprox(drdy1, drdy4)
     @test isapprox(drdy1, drdy5)
 
+end
+
+@testset "Sellar" begin
+
+    # --- System Variables --- #
+    @var x = 0.0
+    @var y1 = 0.0
+    @var y2 = 0.0
+    @var z1 = 0.0
+    @var z2 = 0.0
+    @var f = 0.0
+    @var g1 = 0.0
+    @var g2 = 0.0
+
+    # --- Define Discipline 1 --- #
+
+    # describe function inputs/outputs
+    fin = (x, y2, z1, z2) # inputs
+    fout = (y1,) # normal outputs
+    fout_m = () # in-place (mutating) outputs
+
+    # create function for discipline 1
+    function f_d1(x, y2, z1, z2)
+        y1 = z1^2 + z2 + x - 0.2*y2
+        return y1
+    end
+
+    # construct explicit component for discipline 1
+    d1 = ExplicitComponent(f_d1, fin, fout, fout_m; deriv=ForwardFD())
+
+    # --- Define Discipline 2 --- #
+
+    # describe function inputs/outputs
+    fin = (y1, z1, z2) # inputs
+    fout = (y2,) # normal outputs
+    fout_m = () # in-place (mutating) outputs
+
+    # create function for discipline 2
+    function f_d2(y1, z1, z2)
+        y2 = sqrt(y1) + z1 + z2
+        return y2
+    end
+
+    # construct explicit component for discipline 2
+    d2 = ExplicitComponent(f_d2, fin, fout, fout_m; deriv=ForwardFD())
+
+    # --- Define Objective --- #
+
+    # describe function inputs/outputs
+    fin = (x, y1, y2, z1) # inputs
+    fout = (f,) # normal outputs
+    fout_m = () # in-place (mutating) outputs
+
+    # create objective function
+    function f_obj(x, y1, y2, z1)
+        f = x^2 + z1 + y1 + exp(-y2) # objective
+        return f
+    end
+
+    # construct explicit component for objective
+    obj = ExplicitComponent(f_obj, fin, fout, fout_m; deriv=ForwardFD())
+
+    # --- Define Constraint 1 --- #
+
+    # describe function inputs/outputs
+    fin = (y1,) # inputs
+    fout = (g1,) # normal outputs
+    fout_m = () # in-place (mutating) outputs
+
+    # define first constraint function
+    function f_c1(y1)
+        g1 = 3.16 - y1
+        return g1
+    end
+
+    # construct explicit component for constraint 1
+    c1 = ExplicitComponent(f_c1, fin, fout, fout_m; deriv=ForwardFD())
+
+    # --- Define Constraint 2 --- #
+
+    # describe function inputs/outputs
+    fin = (y2,) # inputs
+    fout = (g2,) # normal outputs
+    fout_m = () # in-place (mutating) outputs
+
+    # define second constraint function
+    function f_c2(y2)
+        g2 = y2 - 24.0
+        return g2
+    end
+
+    # construct explicit component for constraint 2
+    c2 = ExplicitComponent(f_c2, fin, fout, fout_m; deriv=ForwardFD())
+
+    # --- Construct Implicit System --- #
+
+    # components in the implicit system
+    components_isys = (d1, d2)
+
+    # inputs to the implicit system
+    inputs_isys = (x, z1, z2)
+
+    # implicit system construction
+    isys = ImplicitSystem(components_isys, inputs_isys)
+
+    # --- Construct Explicit Component from Implicit System --- #
+    mda = ExplicitComponent(isys; solver=Newton())
+
+    # --- Construct Explicit System --- #
+
+    # components in the sellar problem
+    components_sellar = (mda, obj, c1, c2)
+
+    # inputs to the sellar problem
+    inputs_sellar = (x, z1, z2)
+
+    # outputs from the sellar problem
+    outputs_sellar = (f, g1, g2)
+
+    sellar = ExplicitSystem(components_sellar, inputs_sellar, outputs_sellar)
+
+    # --- Query Results --- #
+
+    # input arguments to the Sellar problem, expressed as a single vector
+    X = rand(3)
+
+    # outputs from the Sellar problem, expressed as a single vector
+    Y = outputs!(sellar, X)
+
+    # jacobian of the outputs with respect to the inputs, expressed as a matrix
+    dYdX = jacobian!(sellar, X)
+
+    # combined evaluation of outputs and jacobian
+    Y, dYdX = outputs_and_jacobian!(sellar, X)
+
+    # --- Test Results against AD --- #
+
+    # Verify using forward mode automatic differentiation
+    dYdX_ad = ForwardDiff.jacobian((X) -> outputs(sellar, X), X)
+
+    @test isapprox(dYdX, dYdX_ad, atol=1e-6)
 end
