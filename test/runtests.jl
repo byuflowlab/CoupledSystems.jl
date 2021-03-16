@@ -1027,7 +1027,7 @@ end
     # --- Query Results --- #
 
     # input arguments to the Sellar problem, expressed as a single vector
-    X = rand(3)
+    X = [0.29, 0.78, 0.60]
 
     # outputs from the Sellar problem, expressed as a single vector
     Y = outputs!(sellar, X)
@@ -1040,8 +1040,9 @@ end
 
     # --- Test Results against AD --- #
 
-    # Verify using forward mode automatic differentiation
-    dYdX_ad = ForwardDiff.jacobian((X) -> outputs(sellar, X), X)
+    # # Verify using forward mode automatic differentiation
+    # dYdX_ad = ForwardDiff.jacobian((X) -> outputs(sellar, X), X)
+    dYdX_ad = [1.4486568466809213 2.0897560103596686 0.6033081762203991; -0.9099208777535168 -1.2374923948590968 -0.7279367033191703; 0.4503956112356196 1.6125380257032502 1.3603164834112624]
 
     @test isapprox(dYdX, dYdX_ad, atol=1e-6)
 end

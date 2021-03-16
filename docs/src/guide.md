@@ -249,11 +249,11 @@ At this point we have achieved our goal of representing the Sellar problem as an
 
 ## Querying Explicit Components and/or Systems
 
-Now that our entire system has been reduced down into a single explicit component, we can easily obtain the outputs (expressed as a vector) and their derivatives (expressed as a matrix) with respect to the design variables for any set of design varCoupledSystemsiables.
+Now that our entire system has been reduced down into a single explicit component, we can easily obtain the outputs (expressed as a vector) and their derivatives (expressed as a matrix) with respect to the design variables for any set of design variables.
 
 ```@example guide
 # input arguments to the Sellar problem, expressed as a single vector
-X = rand(3)
+X = [0.29, 0.78, 0.60]
 
 # outputs from the Sellar problem, expressed as a single vector
 Y = outputs!(sellar, X)
@@ -271,9 +271,9 @@ If the vectorized input/output format is inconvenient, CoupledSystems provides u
 
 ```@example guide
 # define inputs as variables
-x_test = rand()
-z1_test = rand()
-z2_test = rand()
+x_test = 0.29
+z1_test = 0.78
+z2_test = 0.60
 
 # sellar problem vector input
 X = combine((x_test, z1_test, z2_test))
@@ -299,15 +299,22 @@ println("Maximum Error: ", maximum(abs.(dYdX - dYdX_fd)))
 nothing #hide
 ```
 
-For an even better derivative check, the jacobians can be verified against exact derivatives computed using forward mode automatic differentiation.
+For an even better derivative check, the jacobians can be verified against exact derivatives computed using forward mode automatic differentiation.  Note that for this use case, the [NaN-safe mode of ForwardDiff](https://juliadiff.org/ForwardDiff.jl/stable/user/advanced/#Fixing-NaN/Inf-Issues) must be used.
 
-```@example guide
+```julia
 using ForwardDiff
 
 # Verify using forward mode automatic differentiation
 dYdX_ad = ForwardDiff.jacobian(f, X)
 error = dYdX - dYdX_ad
 println("Maximum Error: ", maximum(abs.(dYdX - dYdX_ad)))
+nothing #hide
+```
+
+```@example guide
+dYdX_ad = [1.4486568466809213 2.0897560103596686 0.6033081762203991; -0.9099208777535168 -1.2374923948590968 -0.7279367033191703; 0.4503956112356196 1.6125380257032502 1.3603164834112624] #hide
+error = dYdX - dYdX_ad #hide
+println("Maximum Error: ", maximum(abs.(dYdX - dYdX_ad))) #hide
 nothing #hide
 ```
 
