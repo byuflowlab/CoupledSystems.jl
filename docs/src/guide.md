@@ -120,7 +120,7 @@ nothing #hide
 ```
 
 The method by which to calculate the jacobian of each component is provided through the `deriv` keyword argument.  Possible jacobian calculation methods include:
- - Forward Finite Differencing ([`ForwardFD`](@ref)) (default)
+ - Forward Finite Differencing ([`ForwardFD()`](@ref), default)
  - Central Finite Differencing ([`CentralFD()`](@ref))
  - Complex Step Finite Differencing ([`ComplexFD()`](@ref))
  - Forward-Mode Automatic Differentiation ([`ForwardAD()`](@ref))
