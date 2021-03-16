@@ -310,7 +310,6 @@ using ForwardDiff
 dYdX_ad = ForwardDiff.jacobian(f, X)
 error = dYdX - dYdX_ad
 println("Maximum Error: ", maximum(abs.(dYdX - dYdX_ad)))
-nothing #hide
 ```
 
 ```@example guide
