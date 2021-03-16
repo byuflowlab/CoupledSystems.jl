@@ -219,8 +219,6 @@ function system_component_mapping(components, argin)
         component_input_mapping[icomp] = current_mapping
     end
 
-    println(component_input_mapping)
-
     return component_input_mapping
 end
 
@@ -287,8 +285,6 @@ function system_output_mapping(components, argin, argout)
         idx_sys += nval
     end
 
-    println(output_mapping)
-
     return output_mapping
 end
 
@@ -336,7 +332,7 @@ function output_mapping_matrices(argin, argstate, argout)
             if name(argout[i]) === name(argstate[j])
                 # add to mapping
                 for k = 1:nval
-                    dfdx[idx_out + k, idx_state + k] = 1
+                    dfdu[idx_out + k, idx_state + k] = 1
                 end
                 # skip to next input variable
                 @goto next_output_variable

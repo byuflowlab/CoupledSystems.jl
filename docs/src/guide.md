@@ -29,7 +29,7 @@ using CoupledSystems
 nothing #hide
 ```
 
-Each variables name is used to define connections between components. The values associated with each variable define the size and type of the variable.
+Each variable's name is used to define connections between components. The value assigned to each variable is generally used just to define the size and type of each variable, but it may also be used to generate an initial guess for a nonlinear solver.
 
 ## Constructing Explicit Components
 
@@ -187,7 +187,7 @@ Let's now update the XDSM diagram to account for the newly constructed implicit 
 
 ## Coupling an Implicit Component with a Solver to Construct an Explicit Component
 
-Now that we have a single implicit system of equations, let's couple it with a nonlinear solver in order to solve for the outputs.  We represent the resulting component as an explicit component.
+Now that we have a single implicit system of equations, let's couple it with a nonlinear solver in order to solve for the outputs.  We represent the resulting component as an explicit component.  Note that the initial guess for the Newton solver corresponds to the default values of the variables `y1` and `y2`.
 
 ```@example guide
 mda = ExplicitComponent(isys; solver=Newton())
@@ -204,7 +204,7 @@ nothing #hide
 
 Another option for reducing the computational expenses involved with derivative computations is to include an output function (expressed as an explicit component) when coupling an implicit system with a nonlinear solver.  An output function calculates a small number of outputs (relative to the number of state variables) from the inputs and state variables of an implicit system.
 
-Since all state variables are outputs in this toy problem, there is no benefit to adopting this approach here, but in many practical applications the number of outputs is far less than the number of states making the use of an output function highly beneficial.
+Since all state variables are outputs in this toy problem, there is no benefit to adopting this approach here, but in many practical applications the number of outputs is far less than the number of states, making the use of an output function highly beneficial.
 
 ```@example guide
 
@@ -249,7 +249,7 @@ At this point we have achieved our goal of representing the Sellar problem as an
 
 ## Querying Explicit Components and/or Systems
 
-Now that our entire system has been reduced down into a single explicit component, we can easily obtain the outputs (expressed as a vector) and their derivatives (expressed as a matrix) with respect to the design variables for any set of design variables.
+Now that our entire system has been reduced down into a single explicit component, we can easily obtain the outputs (expressed as a vector) and their derivatives (expressed as a matrix) with respect to the design variables for any set of design varCoupledSystemsiables.
 
 ```@example guide
 # input arguments to the Sellar problem, expressed as a single vector
@@ -267,7 +267,7 @@ Y, dYdX = outputs_and_jacobian!(sellar, X)
 nothing #hide
 ```
 
-If the vectorized input/output format is inconvenient, CoupledSystem's provides utility functions which may be used to combine inputs and/or separate outputs.
+If the vectorized input/output format is inconvenient, CoupledSystems provides utility functions which may be used to combine inputs and/or separate outputs.
 
 ```@example guide
 # define inputs as variables
@@ -276,18 +276,14 @@ z1_test = rand()
 z2_test = rand()
 
 # sellar problem vector input
-x_sys = combine((x_test, z1_test, z2_test))
+X = combine((x_test, z1_test, z2_test))
 
-# sellar problem vector output
-y_sys = outputs!(sellar, x_sys)
+# sellar problem vector and jacobian output
+Y, dYdX = outputs_and_jacobian!(sellar, X)
 
 # sellar problem variable outputs (in order)
-f, g1, g2 = separate(outputs_sellar, y_sys)
+f, g1, g2 = separate(outputs_sellar, Y)
 ```
-
-The position of each output corresponds to the
-
-Inputs and outputs from these functions correspond to CoupledSystem's internal representation of each components as vector valued functions with the
 
 ## Verifying Derivatives
 
@@ -309,26 +305,26 @@ For an even better derivative check, the jacobians can be verified against exact
 using ForwardDiff
 
 # Verify using forward mode automatic differentiation
-dydx_ad = ForwardDiff.jacobian(f, x)
-error = dydx - dydx_ad
-println("Maximum Error: ", maximum(abs.(dydx - dydx_ad)))
+dYdX_ad = ForwardDiff.jacobian(f, X)
+error = dYdX - dYdX_ad
+println("Maximum Error: ", maximum(abs.(dYdX - dYdX_ad)))
 nothing #hide
 ```
 
 Since this package uses analytic expressions to propagate derivatives, the derivatives computed by this package combined with finite differencing are actually more accurate than those computed using finite differencing alone.
 
 ```@example guide
-error = dydx - dydx_ad
-error_fd = dydx_fd - dydx_ad
+error = dYdX - dYdX_ad
+error_fd = dYdX_fd - dYdX_ad
 println("Maximum Error using Finite Differencing: ",
-    maximum(abs.(dydx_fd - dydx_ad)))
+    maximum(abs.(dYdX_fd - dYdX_ad)))
 println("Maximum Error using Finite Differencing and CoupledSystems: ",
-    maximum(abs.(dydx - dydx_ad)))
+    maximum(abs.(dYdX - dYdX_ad)))
 nothing #hide
 ```
 
 ## Final Notes
 
-While the intended use of CoupledSystems is typically to reduce an arbitrarily complex system down to a single explicit component, there are multiple ways in which this may be accomplished.  For example, an alternative approach to modeling the Sellar problem would be to construct a single implicit system from all components and then couple that system with a nonlinear solver (which is effectively the approach used in OpenMDAO).  
+While the intended use of CoupledSystems is typically to reduce an arbitrarily complex system down to a single explicit component, there are multiple ways in which this may be accomplished.  For example, an alternative approach to modeling the Sellar problem would be to construct a single implicit system from all components and then couple that system with a nonlinear solver.  
 
 Additionally, there are multiple ways in which any given problem may be divided up into components.  For example, we could have defined the objective and constraint functions as a single vector-valued function rather than three.  Ultimately, while these choices may seem arbitrary, different combinations of choices may be more computationally efficient than others, especially for derivative computations.

@@ -2,7 +2,7 @@ using CoupledSystems
 using ForwardDiff
 using Test
 
-@testset "NamedVar" begin
+@testset "Named Variables" begin
 
     # default values for each variable
     x1 = rand()
@@ -10,9 +10,9 @@ using Test
     z1 = rand(10, 10)
 
     # define each named variable
-    @named x = x1
-    @named y = y1
-    @named z = z1
+    @var x = x1
+    @var y = y1
+    @var z = z1
 
     # create tuple of named variables
     vars = (x, y, z)
@@ -27,7 +27,6 @@ using Test
     @test x1 == x2
     @test y1 == y2
     @test z1 == z2
-
 end
 
 @testset "ExplicitComponent" begin
@@ -35,9 +34,9 @@ end
     # This uses the paraboloid example from OpenMDAO
 
     # define variables and set defaults
-    @named x = 0.0
-    @named y = 0.0
-    @named fxy = 0.0
+    @var x = 0.0
+    @var y = 0.0
+    @var fxy = 0.0
 
     # construct paraboloid function (and define inputs and outputs)
     fin = (x, y)
@@ -114,9 +113,9 @@ end
     # This uses the paraboloid example from OpenMDAO
 
     # define variables and set defaults
-    @named x = 0.0
-    @named y = 0.0
-    @named fxy = 0.0
+    @var x = 0.0
+    @var y = 0.0
+    @var fxy = 0.0
 
     # construct template function
     fin = (x, y)
@@ -183,18 +182,22 @@ end
 @testset "Explicit to Implicit" begin
 
     # This uses the paraboloid example from OpenMDAO
-    f! = function(y, x)
-        y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
-        return y
-    end
-    df! = function(dydx, x)
-        dydx[1,1] = 2*(x[1]-3) + x[2]
-        dydx[1,2] = x[1] + 2*(x[2]+4)
-        return dydx
-    end
-    x = zeros(2)
-    y = zeros(1)
-    xcomp = ExplicitComponent(x, y; f=f!, df=df!)
+
+    # define variables and set defaults
+    @var x = 0.0
+    @var y = 0.0
+    @var fxy = 0.0
+
+    # construct template function
+    fin = (x, y)
+    fout = (fxy,)
+    foutin = ()
+    func = (x,y) -> (x - 3)^2 + x*y + (y + 4)^2 - 3
+
+    # construct explicit component
+    xcomp = ExplicitComponent(func, fin, fout, foutin)
+
+    # construct implicit component from explicit component
     icomp = ImplicitComponent(xcomp)
 
     r = zeros(1)
@@ -258,70 +261,65 @@ end
     @test r1 == r2 == r3 == r4 == r5
     @test drdx1 == drdx2 == drdx3 == drdx4 == drdx5
     @test drdy1 == drdy2 == drdy3 == drdy4 == drdy5
-
 end
 
 @testset "ExplicitSystem" begin
 
-    # System Inputs
-    xsys = zeros(5)
+    # define system variables and defaults
+    @var x = 0.0
+    @var y = 0.0
+    @var a = 0.0
+    @var b = 0.0
+    @var c = 0.0
+    @var fp = 0.0
+    @var fq = 0.0
+    @var ft = zeros(2)
 
-    # First Component: Paraboloid
-    f1! = function(y, x)
-        y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
-        return y
-    end
-    x1 = zeros(2)
-    y1 = zeros(1)
-    mapping1 = [
-        (0,1), # system inputs, index 1
-        (0,2), # system inputs, index 2
-        ]
-    comp1 = ExplicitComponent(x1, y1; f=f1!, deriv=ForwardAD())
+    # construct template function for paraboloid component
+    fin = (x, y)
+    fout = (fp,)
+    foutin = ()
+    func = (x,y) -> (x - 3)^2 + x*y + (y + 4)^2 - 3
+
+    # construct paraboloid component
+    paraboloid = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
 
     # Second Component: Quadratic
-    f2! = function(y, x)
-        y[1] = x[1]*x[4]^2 + x[2]*x[4] + x[3]*x[4] + 1
-        return y
+
+    # construct template function for quadratic component
+    fin = (a, b, c, fp)
+    fout = (fq,)
+    foutin = ()
+    func = function(a, b, c, fp)
+        fq = a*fp^2 + b*fp + c*fp + 1
+        return fq
     end
-    x2 = zeros(4)
-    y2 = zeros(1)
-    mapping2 = [
-        (0,3), # system inputs, index 3
-        (0,4), # system inputs, index 4
-        (0,5), # system inputs, index 5
-        (1,1), # component 1 outputs, index 1
-    ]
-    comp2 = ExplicitComponent(x2, y2; f=f2!, deriv=ForwardAD())
+
+    # construct quadratic component
+    quadratic = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
 
     # Third Component: Trigometric Functions
-    f3! = function(y, x)
-        y[1] = sin(x[1])
-        y[2] = cos(x[2])
-        return y
+
+    # construct template function for trigometric component
+    fin = (fp, fq)
+    fout = ()
+    foutin = (ft,)
+    func = function(ft, fp, fq)
+        ft[1] = sin(fp)
+        ft[2] = cos(fq)
+        return ft
     end
-    x3 = zeros(2)
-    y3 = zeros(2)
-    mapping3 = [
-        (1,1), # component 1 outputs, index 1
-        (2,1), # component 2 outputs, index 2
-    ]
-    comp3 = ExplicitComponent(x3, y3; f=f3!, deriv=ForwardAD())
 
-    # System Outputs
-    ysys = zeros(2)
-    output_mapping = [
-        (3,1), # component 3 outputs, index 1
-        (3,2), # component 3 outputs, index 2
-    ]
+    # construct trigometric component
+    trigometric = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
 
-    # put it together
-    x0 = xsys
-    y0 = ysys
-    components = (comp1, comp2, comp3)
-    component_mapping = (mapping1, mapping2, mapping3)
+    # Combined System
 
-    sys = ExplicitSystem(x0, y0, components, component_mapping, output_mapping)
+    argin = (x, y, a, b, c)
+    argout = (ft,)
+    components = (paraboloid, quadratic, trigometric)
+
+    sys = ExplicitSystem(components, argin, argout)
 
     y = zeros(2)
     dydx = zeros(2,5)
@@ -350,70 +348,64 @@ end
     y5, dydx5 = outputs_and_jacobian(sys, x)
     @test y1 == y2 == y3 == y4 == y5
     @test dydx1 == dydx2 == dydx3 == dydx4 == dydx5
-
 end
 
 @testset "ExplicitSystem - Derivatives" begin
 
-    # System Inputs
-    xsys = zeros(5)
+    # define system variables and defaults
+    @var x = 0.0
+    @var y = 0.0
+    @var a = 0.0
+    @var b = 0.0
+    @var c = 0.0
+    @var fp = 0.0
+    @var fq = 0.0
+    @var ft = zeros(2)
 
-    # First Component: Paraboloid
-    f1! = function(y, x)
-        y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
-        return y
-    end
-    x1 = zeros(2)
-    y1 = zeros(1)
-    mapping1 = [
-        (0,1), # system inputs, index 1
-        (0,2), # system inputs, index 2
-        ]
-    comp1 = ExplicitComponent(x1, y1; f=f1!, deriv=ForwardAD())
+    # construct template function for paraboloid component
+    fin = (x, y)
+    fout = (fp,)
+    foutin = ()
+    func = (x,y) -> (x - 3)^2 + x*y + (y + 4)^2 - 3
+
+    # construct paraboloid component
+    paraboloid = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
 
     # Second Component: Quadratic
-    f2! = function(y, x)
-        y[1] = x[1]*x[4]^2 + x[2]*x[4] + x[3]*x[4] + 1
-        return y
+
+    # construct template function for quadratic component
+    fin = (a, b, c, fp)
+    fout = (fq,)
+    foutin = ()
+    func = function(a, b, c, fp)
+        fq = a*fp^2 + b*fp + c*fp + 1
+        return fq
     end
-    x2 = zeros(4)
-    y2 = zeros(1)
-    mapping2 = [
-        (0,3), # system inputs, index 3
-        (0,4), # system inputs, index 4
-        (0,5), # system inputs, index 5
-        (1,1), # component 1 outputs, index 1
-    ]
-    comp2 = ExplicitComponent(x2, y2; f=f2!, deriv=ForwardAD())
+
+    # construct quadratic component
+    quadratic = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
 
     # Third Component: Trigometric Functions
-    f3! = function(y, x)
-        y[1] = sin(x[1])
-        y[2] = cos(x[2])
-        return y
+
+    # construct template function for trigometric component
+    fin = (fp, fq)
+    fout = ()
+    foutin = (ft,)
+    func = function(ft, fp, fq)
+        ft[1] = sin(fp)
+        ft[2] = cos(fq)
+        return ft
     end
-    x3 = zeros(2)
-    y3 = zeros(2)
-    mapping3 = [
-        (1,1), # component 1 outputs, index 1
-        (2,1), # component 2 outputs, index 2
-    ]
-    comp3 = ExplicitComponent(x3, y3; f=f3!, deriv=ForwardAD())
 
-    # System Outputs
-    ysys = zeros(2)
-    output_mapping = [
-        (3,1), # component 3 outputs, index 1
-        (3,2), # component 3 outputs, index 2
-    ]
+    # construct trigometric component
+    trigometric = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
 
-    # put it together
-    x0 = xsys
-    y0 = ysys
-    components = (comp1, comp2, comp3)
-    component_mapping = (mapping1, mapping2, mapping3)
+    # Combined System
+    argin = (x, y, a, b, c)
+    argout = (ft,)
+    components = (paraboloid, quadratic, trigometric)
 
-    sys = ExplicitSystem(x0, y0, components, component_mapping, output_mapping)
+    sys = ExplicitSystem(components, argin, argout)
 
     # initialize storage for outputs and jacobian
     y = zeros(2)
@@ -458,57 +450,92 @@ end
     dydx_ad = ForwardDiff.jacobian(x -> outputs(sys, x), x)
     dydx_r = jacobian!!!(sys, x, Reverse())
     @test isapprox(dydx_ad, dydx_r)
-
 end
 
 @testset "ImplicitComponent" begin
 
     # This uses the quadratic example from OpenMDAO
 
+    # variables
+    @var a = 0.0
+    @var b = 0.0
+    @var c = 0.0
+    @var x = 0.0
+
+    # template residual function
+    argin = (a, b, c)
+    argout = (x,)
+    func = function(r, a, b, c, x)
+        r[1] = a*x^2 + b*x + c
+        return r
+    end
+
+    # vector form of residual function
     f! = function(r, x, y)
         r[1] = x[1]*y[1]^2 + x[2]*y[1] + x[3]
         return r
     end
+
+    # jacobian wrt inputs
     dfdx! = function(drdx, x, y)
         drdx[1,1] = y[1]^2
         drdx[1,2] = y[1]
         drdx[1,3] = 1
         return drdx
     end
+
+    # jacobian wrt outputs
     dfdy! = function(drdy, x, y)
         drdy[1,1] = 2*x[1]*y[1] + x[2]
         return drdy
     end
+
+    # residual and jacobian wrt inputs
     fdfdx! = function(r, drdx, x, y)
         f!(r, x, y)
         dfdx!(drdx, x, y)
         return r, drdx
     end
+
+    # residual and jacobian wrt outputs
     fdfdy! = function(r, drdy, x, y)
         f!(r, x, y)
         dfdy!(drdy, x, y)
         return r, drdy
     end
+
+    # residual and jacobians
     fdf! = function(r, drdx, drdy, x, y)
         f!(r, x, y)
         dfdx!(drdx, x, y)
         dfdy!(drdy, x, y)
         return r, drdx, drdy
     end
-    x = [2,0,-1]
-    y = zeros(1)
+
+    # storage for results
     r = zeros(1)
     drdx = zeros(1,3)
     drdy = zeros(1,1)
-    comp1 = ImplicitComponent(x, y, r; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
-        fdfdy=fdfdy!, fdf=fdf!, drdx=drdx, drdy=drdy)
-    comp2 = ImplicitComponent(x, y, r; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
-        fdfdy=fdfdy!, fdf=fdf!)
-    comp3 = ImplicitComponent(x, y, r; f=f!, dfdx=dfdx!, dfdy=dfdy!)
-    comp4 = ImplicitComponent(x, y, r; fdfdx=fdfdx!, fdfdy=fdfdy!)
-    comp5 = ImplicitComponent(x, y, r; fdf=fdf!)
 
-    for comp in [comp2, comp3, comp4, comp5]
+    comp1 = ImplicitComponent(func, argin, argout, r; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+        fdfdy=fdfdy!, fdf=fdf!, drdx=drdx, drdy=drdy)
+    comp2 = ImplicitComponent(func, argin, argout, r; dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+        fdfdy=fdfdy!, fdf=fdf!, drdx=drdx, drdy=drdy)
+    comp3 = ImplicitComponent(func, argin, argout, r; dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+        fdfdy=fdfdy!, fdf=fdf!)
+    comp4 = ImplicitComponent(func, argin, argout, r; dfdx=dfdx!, dfdy=dfdy!)
+    comp5 = ImplicitComponent(func, argin, argout; fdfdx=fdfdx!, fdfdy=fdfdy!)
+    comp6 = ImplicitComponent(func, argin, argout; fdf=fdf!)
+
+    comp7 = ImplicitComponent(argin, argout; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+        fdfdy=fdfdy!, fdf=fdf!, drdx=drdx, drdy=drdy)
+    comp8 = ImplicitComponent(argin, argout; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+        fdfdy=fdfdy!, fdf=fdf!)
+    comp9 = ImplicitComponent(argin, argout; f=f!, dfdx=dfdx!, dfdy=dfdy!)
+    comp10 = ImplicitComponent(argin, argout; fdfdx=fdfdx!, fdfdy=fdfdy!)
+    comp11 = ImplicitComponent(argin, argout; fdf=fdf!)
+
+    for comp in [comp2, comp3, comp4, comp5, comp6, comp7, comp8, comp9, comp10, comp11]
         x = rand(3)
         y = rand(1)
         @test residuals(comp1, x, y) == residuals(comp, x, y)
@@ -557,44 +584,49 @@ end
         @test residuals_and_jacobians!!(comp1, x, y) == residuals_and_jacobians!!(comp, x, y)
         @test residuals_and_jacobians(comp1) == residuals_and_jacobians(comp)
     end
-
 end
 
 @testset "ImplicitComponent - Derivatives" begin
 
     # This uses the quadratic example from OpenMDAO
 
-    f! = function(r, x, y)
-        r[1] = x[1]*y[1]^2 + x[2]*y[1] + x[3]
+    # variables
+    @var a = 0.0
+    @var b = 0.0
+    @var c = 0.0
+    @var x = 0.0
+
+    # template residual function
+    fin = (a, b, c)
+    fout = (x,)
+    func = function(r, a, b, c, x)
+        r[1] = a*x^2 + b*x + c
         return r
     end
+
+    # jacobian wrt inputs
     dfdx! = function(drdx, x, y)
         drdx[1,1] = y[1]^2
         drdx[1,2] = y[1]
         drdx[1,3] = 1
         return drdx
     end
+
+    # jacobian wrt outputs
     dfdy! = function(drdy, x, y)
         drdy[1,1] = 2*x[1]*y[1] + x[2]
         return drdy
     end
-    x = [2,0,-1]
-    y = zeros(1)
-    r = zeros(1)
-    drdx = zeros(1,3)
-    drdy = zeros(1,1)
-    comp = ImplicitComponent(x, y, r; f=f!, dfdx=dfdx!, dfdy=dfdy!)
 
-    comp_FAD = ImplicitComponent(x, y, r; f=f!, xderiv=ForwardAD(), yderiv=ForwardAD())
-    comp_RAD = ImplicitComponent(x, y, r; f=f!, xderiv=ReverseAD(), yderiv=ReverseAD())
-    comp_FFD = ImplicitComponent(x, y, r; f=f!, xderiv=ForwardFD(), yderiv=ForwardFD())
-    comp_CFD = ImplicitComponent(x, y, r; f=f!, xderiv=CentralFD(), yderiv=CentralFD())
-    comp_XFD = ImplicitComponent(x, y, r; f=f!, xderiv=ComplexFD(), yderiv=ComplexFD())
+    comp = ImplicitComponent(func, fin, fout; dfdx=dfdx!, dfdy=dfdy!)
 
-    i = 0
+    comp_FAD = ImplicitComponent(func, fin, fout; xderiv=ForwardAD(), yderiv=ForwardAD())
+    comp_RAD = ImplicitComponent(func, fin, fout; xderiv=ReverseAD(), yderiv=ReverseAD())
+    comp_FFD = ImplicitComponent(func, fin, fout; xderiv=ForwardFD(), yderiv=ForwardFD())
+    comp_CFD = ImplicitComponent(func, fin, fout; xderiv=CentralFD(), yderiv=CentralFD())
+    comp_XFD = ImplicitComponent(func, fin, fout; xderiv=ComplexFD(), yderiv=ComplexFD())
+
     for dcomp in [comp_FAD, comp_RAD, comp_FFD, comp_CFD, comp_XFD]
-
-        i += 1
 
         x = rand(3)
         y = rand(1)
@@ -651,31 +683,32 @@ end
 
     # This uses the quadratic example from OpenMDAO
 
-    f! = function(r, x, y)
-        r[1] = x[1]*y[1]^2 + x[2]*y[1] + x[3]
+    # variables
+    @var a = 0.0
+    @var b = 0.0
+    @var c = 0.0
+    @var x = 0.0
+
+    # template residual function
+    fin = (a, b, c)
+    fout = (x,)
+    func = function(r, a, b, c, x)
+        r[1] = a*x^2 + b*x + c
         return r
     end
 
-    dfdx! = function(drdx, x, y)
-        drdx[1,1] = y[1]^2
-        drdx[1,2] = y[1]
-        drdx[1,3] = 1
-        return drdx
-    end
+    # create implicit component
+    icomp = ImplicitComponent(func, fin, fout)
 
-    dfdy! = function(drdy, x, y)
-        drdy[1,1] = 2*x[1]*y[1] + x[2]
-        return drdy
-    end
-
-    x = [2,0,-1]
-    y = zeros(1)
-    r = zeros(1)
-
-    icomp = ImplicitComponent(x, y, r; f=f!, dfdx=dfdx!, dfdy=dfdy!)
+    # create explicit component
     xcomp = ExplicitComponent(icomp)
 
-    dydx = zeros(1,3)
+    # inputs
+    x = [2, 0, -1]
+
+    # storage for outputs
+    y = zeros(1)
+    dydx = zeros(1, 3)
 
     y1 = outputs!(xcomp, y, x)
     y2 = outputs!(xcomp, x)
@@ -716,70 +749,62 @@ end
 @testset "ImplicitSystem" begin
 
     # We use an explicit system here, modified to become implicit
+    # define system variables and defaults
+    @var x = 0.0
+    @var y = 0.0
+    @var a = 0.0
+    @var b = 0.0
+    @var c = 0.0
+    @var fp = 0.0
+    @var fq = 0.0
+    @var ft = zeros(2)
 
-    # System Inputs
-    xsys = zeros(5)
+    # construct template function for paraboloid component
+    fin = (x, y)
+    fout = (fp,)
+    foutin = ()
+    func = (x,y) -> (x - 3)^2 + x*y + (y + 4)^2 - 3
 
-    # First Component: Paraboloid
-    f1! = function(y, x)
-        y[1] = (x[1]-3)^2 + x[1]*x[2] + (x[2]+4)^2 - 3
-        return y
-    end
-    x1 = zeros(2)
-    y1 = zeros(1)
-    mapping1 = [
-        (0,1), # system inputs, index 1
-        (0,2), # system inputs, index 2
-        ]
-    xcomp1 = ExplicitComponent(x1, y1; f=f1!, deriv=ForwardAD())
-    icomp1 = ImplicitComponent(xcomp1)
+    # construct paraboloid component
+    paraboloid = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
 
     # Second Component: Quadratic
-    f2! = function(y, x)
-        y[1] = x[1]*x[4]^2 + x[2]*x[4] + x[3]*x[4] + 1
-        return y
+
+    # construct template function for quadratic component
+    fin = (a, b, c, fp)
+    fout = (fq,)
+    foutin = ()
+    func = function(a, b, c, fp)
+        fq = a*fp^2 + b*fp + c*fp + 1
+        return fq
     end
-    x2 = zeros(4)
-    y2 = zeros(1)
-    mapping2 = [
-        (0,3), # system inputs, index 3
-        (0,4), # system inputs, index 4
-        (0,5), # system inputs, index 5
-        (1,1), # component 1 outputs, index 1
-    ]
-    xcomp2 = ExplicitComponent(x2, y2; f=f2!, deriv=ForwardAD())
-    icomp2 = ImplicitComponent(xcomp2)
+
+    # construct quadratic component
+    quadratic = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
 
     # Third Component: Trigometric Functions
-    f3! = function(y, x)
-        y[1] = sin(x[1])
-        y[2] = cos(x[2])
-        return y
+
+    # construct template function for trigometric component
+    fin = (fp, fq)
+    fout = ()
+    foutin = (ft,)
+    func = function(ft, fp, fq)
+        ft[1] = sin(fp)
+        ft[2] = cos(fq)
+        return ft
     end
-    x3 = zeros(2)
-    y3 = zeros(2)
-    mapping3 = [
-        (1,1), # component 1 outputs, index 1
-        (2,1), # component 2 outputs, index 2
-    ]
-    xcomp3 = ExplicitComponent(x3, y3; f=f3!, deriv=ForwardAD())
-    icomp3 = ImplicitComponent(xcomp3)
 
-    # System Outputs
-    ysys = zeros(2)
-    output_mapping = [
-        (3,1), # component 3 outputs, index 1
-        (3,2), # component 3 outputs, index 2
-    ]
+    # construct trigometric component
+    trigometric = ExplicitComponent(func, fin, fout, foutin; deriv=ForwardAD())
 
-    # put it together
-    x0 = xsys
-    y0 = ysys
-    r0 = copy(ysys)
-    components = (icomp1, icomp2, icomp3)
-    component_mapping = (mapping1, mapping2, mapping3)
+    # components in implicit system
+    components = (paraboloid, quadratic, trigometric)
 
-    sys = ImplicitSystem(x0, components, component_mapping)
+    # arguments to implicit system
+    argin = (x,y,a,b,c)
+
+    # construct implicit system
+    sys = ImplicitSystem(components, argin)
 
     r = zeros(4)
     drdx = zeros(4, 5)

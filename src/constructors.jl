@@ -14,7 +14,7 @@ function allocate_jacobian(x, y, sp::SparsePattern)
 end
 
 """
-    ExplicitComponent([func, ] fin, fout, foutin; kwargs...)
+    ExplicitComponent([func,] fin, fout, foutin; kwargs...)
 
 Construct a system component defined by the explicit function `func` with inputs
 corresponding to `fin`, outputs corresponding to `fout`, and in-place
@@ -36,6 +36,8 @@ outputs corresponding to `foutin`.
     the size and type of the jacobian is inferred.
  - `deriv`: Method used to calculate the jacobian if both `df` and `fdf` are not
     provided.
+ - `sparsity = DensePattern()`: Defines the sparsity structure of the jacobian
+    if `dydx` is not provided
  - `component_inputs`: Names of the inputs from `fin` which are also used as
     inputs to `f`. Defaults to all variables in `inputs`.
  - `component_outputs`: Names of the outputs from `fout` and `foutin` which are
@@ -446,7 +448,7 @@ analytic_sensitivity_equation(dfdx, dfdu, drdx, drdu, ::Direct) = dfdx - dfdu*(d
 analytic_sensitivity_equation(dfdx, dfdu, drdx, drdu, ::Adjoint) = dfdx - transpose(transpose(drdu)\transpose(dfdu))*drdx
 
 """
-    ExplicitSystem(x0, y0, components, component_mapping, output_mapping)
+    ExplicitSystem(components, argin, argout; kwargs...)
 
 Construct an explicit system component from a collection of explicit system
 components.
@@ -606,18 +608,19 @@ function forward_mode_mapping(inputs, components, component_input_mapping, outpu
 end
 
 """
-    ImplicitComponent(func, inputs, outputs, residuals; kwargs...)
+    ImplicitComponent([func,] fin, fout [, r0]; kwargs...)
 
 Construct a system component defined by the in-place implicit residual function
-`func` with inputs corresponding to `inputs` and outputs corresponding to
-`outputs`.  Output variables are also state variables.
+`func` with inputs corresponding to `fin` and outputs corresponding to `fout`.
+The output variables are identical to the state variables of the component.
 
 # Arguments
- - `func`: In-place residual function, of the form `residuals = func(residuals, inputs..., outputs...)`
- - `inputs`: Tuple of named variables (see [`NamedVar`](@ref)) corresponding to function inputs
- - `outputs`: Tuple of named variables (see [`NamedVar`](@ref)) corresponding to function outputs
- - `residuals`: Vector containing the implicit components residuals.  It's length
-    must correspond to the number of component outputs/states
+ - `func`: In-place residual function, of the form `residuals = func(r, fin..., fout...)`
+ - `fin`: Tuple of named variables (see [`NamedVar`](@ref)) corresponding to function inputs
+ - `fout`: Tuple of named variables (see [`NamedVar`](@ref)) corresponding to function outputs
+ - `r0`: Vector which defines the size and type of the component's residuals.
+    Defaults to the size and type of the output vector. It's length must
+    correspond to the total number of component outputs/states.
 
 # Keyword Arguments
  - `f`: In-place residual function `f(r, x, y)`. `x` is an input vector containing values
@@ -637,40 +640,59 @@ Construct a system component defined by the in-place implicit residual function
     inputs if it is not provided. Defaults to [`ForwardFD`](@ref).
  - `yderiv`: Method used to calculate the residual jacobian with respect to the
     outputs if it is not provided. Defaults to [`ForwardFD`](@ref).
- - `component_inputs`: Names of the inputs from `inputs` which are also used as
-    inputs to `f`. Defaults to all variables in `inputs`.
- - `component_outputs`: Names of the outputs from `outputs` which are also used
-    as outputs from `f`. Defaults to all variables in `outputs`.
+ - `xsparsity = DensePattern()`: Defines the sparsity structure of the jacobian
+    with respect to the inputs if `drdx` is not provided
+ - `ysparsity = DensePattern()`: Defines the sparsity structure of the jacobian
+    with respect to the outputs if `drdy` is not provided
+ - `component_inputs`: Names of the inputs from `fin` which are also used as
+    inputs to `f`. Defaults to all variables in `fin`.
+ - `component_outputs`: Names of the outputs from `fout` which are also used
+    as outputs from `f`. Defaults to all variables in `fout`.
 """
-function ImplicitComponent(func, inputs, outputs, residuals;
+function ImplicitComponent(func, fin, fout, r0=nothing;
     f=nothing, dfdx=nothing, dfdy=nothing, fdfdx=nothing, fdfdy=nothing, fdf=nothing,
     drdx=nothing, drdy=nothing, xderiv=ForwardFD(), yderiv=ForwardFD(),
-    component_inputs = name.(inputs), component_outputs = name.(outputs))
+    xsparsity = DensePattern(), ysparsity = DensePattern(),
+    component_inputs = name.(fin), component_outputs = name.(fout))
 
     # ensure the residual function is defined
     @assert any((!isnothing(func), !isnothing(f), !isnothing(fdfdx), !isnothing(fdfdy), !isnothing(fdf))) "Residual function not defined"
 
-    # check that specified inputs/outputs correspond to actual inputs/outputs
-    @assert all(in(name.(inputs)), component_inputs)
-    @assert all(in(name.(outputs)), component_outputs)
+    # get default inputs and outputs
+    default_inputs = value.(fin)
+    default_outputs = value.(fout)
 
-    # get indices of component inputs/outputs
-    input_indices = findall(in(name.(component_inputs)), name.(inputs))
-    output_indices = findall(in(name.(component_outputs)), name.(outputs))
+    # check that specified argin/argout correspond to actual argin/argout
+    @assert all(in(name.(fin)), component_inputs)
+    @assert all(in(name.(fout)), component_outputs)
+
+    # get indices of component inputs (as a tuple)
+    component_input_indices = (
+        findall(in(component_inputs), name.(fin))...,
+        )
+
+    # get indices of component outputs (as a tuple)
+    component_output_indices = (
+        findall(in(component_outputs), name.(fout))...,
+        )
+
+    # named variables corresponding to component inputs/outputs
+    argin = getindices(fin, component_input_indices)
+    argout = getindices(fout, component_output_indices)
 
     # construct input and output vectors
-    x0 = combine(inputs[input_indices])
-    y0 = combine(outputs[output_indices])
-    r0 = residuals
+    x0 = combine(argin)
+    y0 = combine(argout)
+    r0 = isnothing(r0) ? similar(y0, promote_type(eltype(x0), eltype(y0))) : r0
+
+    # ensure sizes of `r` and `y` are compatible
+    @assert length(r0) == length(y0) "The length of the residual vector must match the number of outputs/states"
 
     # ensure sizes of `x`, `r`, and `drdx` are compatibile
     @assert isnothing(drdx) || (length(r0) == size(drdx, 1) && length(x0) == size(drdx, 2))
 
     # ensure sizes of `y`, `r`, and `drdy` are compatibile
     @assert isnothing(drdy) || (length(r0) == size(drdy, 1) && length(y0) == size(drdy, 2))
-
-    # ensure the length of the residual vector matches the number of states
-    @assert length(r0) == length(y0) "The length of the residual vector must match the number of outputs/states"
 
     # allocate storage and initialize with NaNs (since values are as of yet undefined)
     x_f = NaN .* x0
@@ -688,11 +710,14 @@ function ImplicitComponent(func, inputs, outputs, residuals;
         if !isnothing(func)
             # construct residual function from `func`
             f = function(r, x, y)
-                # get new inputs and outputs
-                new_inputs = update_arguments(inputs, separate(x), input_indices)
-                new_outputs = update_arguments(outputs, separate(y), output_indices)
-                # call function to get new outputs
-                f(r, new_inputs..., new_outputs...)
+                # get new component inputs/outputs
+                new_component_inputs = separate(argin, x)
+                new_component_outputs = separate(argout, y)
+                # replace default inputs with new component inputs/outputs
+                new_inputs = setindices(default_inputs, new_component_inputs, component_input_indices)
+                new_outputs = setindices(default_outputs, new_component_outputs, component_output_indices)
+                # call function to update residual values
+                func(r, new_inputs..., new_outputs...)
                 # return result
                 return r
             end
@@ -808,8 +833,10 @@ function ImplicitComponent(func, inputs, outputs, residuals;
     end
 
     return ImplicitComponent(f, dfdx, dfdy, fdfdx, fdfdy, fdf, x_f, y_f, x_dfdx,
-        y_dfdx, x_dfdy, y_dfdy, r, drdx, drdy)
+        y_dfdx, x_dfdy, y_dfdy, r, drdx, drdy, argin, argout)
 end
+
+ImplicitComponent(fin, fout, args...; kwargs...) = ImplicitComponent(nothing, fin, fout, args...; kwargs...)
 
 make_implicit(component::ExplicitComponent) = ImplicitComponent(component)
 make_implicit(component::ExplicitSystem) = ImplicitComponent(component)
