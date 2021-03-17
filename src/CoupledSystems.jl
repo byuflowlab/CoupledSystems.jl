@@ -4,6 +4,7 @@ using LinearAlgebra
 using SparseArrays, SparseDiffTools
 using FiniteDiff, ForwardDiff, ReverseDiff, DiffResults
 using NLsolve
+using DifferentialEquations
 
 import Base.setindex, Base.front, Base.tail
 
@@ -56,5 +57,8 @@ include("constructors.jl")
 
 # collection of built-in solvers for converting implicit components to explicit components
 include("solvers.jl")
+
+# DifferentialEquations interface
+include("diffeq.jl")
 
 end

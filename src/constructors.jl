@@ -185,7 +185,7 @@ function ExplicitComponent(component::AbstractImplicitComponent, argout=componen
     u0 = combine(argstate)
 
     # construct dfdx and dfdu
-    dfdx, dfdu = output_mapping_matrices(argin, argstate, argout)
+    dfdx, dfdu = mapping_matrices(argin, argstate, argout)
 
     # allocate storage and initialize with NaNs (since values are as of yet undefined)
     x_f = NaN .* inputs(component) # inputs are the same as component
@@ -312,7 +312,7 @@ function ExplicitComponent(component::AbstractImplicitComponent, output_componen
     dfdu = outputs(output_component) * outputs(component)' .* NaN
 
     # construct dvdx and dvdu where `v` is a vector of inputs to `output_component`
-    dvdx, dvdu = output_mapping_matrices(argin, argstate, output_component.argin)
+    dvdx, dvdu = mapping_matrices(argin, argstate, output_component.argin)
 
     # allocate storage and initialize with NaNs (since values are as of yet undefined)
     x_f = NaN .* inputs(component)

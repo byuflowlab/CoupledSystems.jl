@@ -288,13 +288,58 @@ function system_output_mapping(components, argin, argout)
     return output_mapping
 end
 
+
 """
-    output_mapping_matrices(argin, argstate, argout)
+    mapping_matrix(argin, argout)
+
+Construct a matrix that maps the arguments in `argin` to the arguments in `argout`
+"""
+function mapping_matrix(argin, argout)
+
+    # length of input and output vectors
+    nx = sum(length.(argin))
+    ny = sum(length.(argout))
+
+    # initialize matrix
+    dfdx = spzeros(ny, nx)
+
+    # output variable starting index
+    idx_out = 0
+    # populate mapping for this component
+    for i = 1:length(argout)
+        # number of values in variable
+        nval = length(argout[i])
+        # check all inputs for match
+        idx_in = 0
+        for j = 1:length(argin)
+            if name(argout[i]) === name(argin[j])
+                # add to mapping
+                for k = 1:nval
+                    dfdx[idx_out + k, idx_in + k] = 1
+                end
+                # skip to next input variable
+                @goto next_output_variable
+            else
+                # check next system input
+                idx_in += length(argin[j])
+            end
+        end
+        error("No input or state variable found for output `$(name(argout[i]))`")
+        @label next_output_variable
+        idx_out += nval
+    end
+
+    return dfdx
+end
+
+
+"""
+    mapping_matrices(argin, argstate, argout)
 
 Construct matrices that maps an implicit function's inputs and/or state variables
 to specified output variables.
 """
-function output_mapping_matrices(argin, argstate, argout)
+function mapping_matrices(argin, argstate, argout)
 
     # length of input, state, and output vectors
     nx = sum(length.(argin))
@@ -302,8 +347,8 @@ function output_mapping_matrices(argin, argstate, argout)
     ny = sum(length.(argout))
 
     # initialize matrices
-    dfdx = BitArray(undef, ny, nx)
-    dfdu = BitArray(undef, ny, nu)
+    dfdx = BitArray(undef, ny, nx) .= 0
+    dfdu = BitArray(undef, ny, nu) .= 0
 
     # output variable starting index
     idx_out = 0
