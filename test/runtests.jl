@@ -108,6 +108,93 @@ end
     end
 end
 
+@testset "ExplicitComponent - input/output arguments" begin
+
+    # define variables and set defaults
+    @var x1 = [7.0; 8.0]
+    @var x2 = 0.0
+    @var y = [2.0;]
+    @var fxy = 3.0
+
+    # Main constraint is that all unmutable outputs must appear first (in the order specified in foutin),
+    #  and then all the input parameters (specified in fin)
+
+    # construct dummy function with all kinds of arguments
+    fin = (x1,x2)
+    fout = (fxy,)
+    foutin = (y,)
+    func = function(y,x1,x3) 
+        y[1] = 2*x1[1]+x1[2]
+        fxy = 10. *x3[1]
+        return fxy
+    end
+
+    comp1 = ExplicitComponent(func, fin, fout, foutin)
+
+    X = [1.0; 4.0; 2.0] #Caution: this must be large enough to group all inputs
+    Y = zeros(2)        #Caution: this must be large enough to group all outpus (unmutable and mutable)
+    Y_res = [20.,6.]    #expected output
+
+    @test outputs(comp1, X) == Y_res
+    @test outputs!(comp1, Y, X) == Y_res
+    @test Y == Y_res
+   
+    # ---------------------------------------------
+
+    # construct dummy function with NO unmutable arguments, at leat none that we use
+    fin = (x1,x2)
+    fout = ()
+    foutin = (y,)
+    #let's use the same func
+
+    comp2 = ExplicitComponent(func, fin, fout, foutin)
+
+    X = [1.0; 4.0; 2.0] #Caution: this must be large enough to group all inputs
+    Y = zeros(1)        #Caution: this must be large enough to group all outpus (unmutable and mutable)
+    Y_res = [6.,]    #expected output
+
+       @test outputs(comp2, X) == Y_res
+    @test outputs!(comp2, Y, X) == Y_res
+    @test Y == Y_res
+
+    # ---------------------------------------------
+    # define variables and set defaults
+    @var x1 = [7.0; 8.0]
+    @var x2 = 6.0
+    @var y1 = [0.0;]
+    @var y2 = [1.0; 2.0]
+    @var f1 = 3.0
+    @var f2 = [4.0;5.0]
+
+    # construct dummy function with many in/out arguments, both vectors and scalars, in mixed orders
+    fin = (x2,x1)
+    fout = (f1,f2)
+    foutin = (y1,y2)
+    func = function(y1,y2,a1,a2) 
+        y1[1] = sum(a2)
+        y2 .= 2 .* a2[1:2]
+        f1 = 100 .* a1
+        f2 = [a2[1];a1]
+        return f1, f2
+    end
+
+    comp3 = ExplicitComponent(func, fin, fout, foutin)
+
+    A1 = 2.
+    A2 = [1.0; 4.0]
+    Y1 = zeros(1)
+    Y2 = zeros(2)
+    F1,F2 = func(Y1,Y2,A1,A2)
+
+    X = [2.0;  1.0; 4.0] #Caution: this must be large enough to group all inputs
+    Y = zeros(6)        #Caution: this must be large enough to group all outpus (unmutable and mutable)
+    Y_res = vcat(F1,F2,Y1,Y2)    #expected output
+
+    @test outputs(comp3, X) == Y_res
+    @test outputs!(comp3, Y, X) == Y_res
+    @test Y == Y_res
+end
+
 @testset "ExplicitComponent - Derivatives" begin
 
     # This uses the paraboloid example from OpenMDAO

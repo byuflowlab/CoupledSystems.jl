@@ -68,16 +68,22 @@ function ExplicitComponent(func, fin, fout, foutin;
     component_input_indices = (
         findall(in(component_inputs), name.(fin))...,
         )
-
+    
     # get indices of component outputs (as a tuple)
-    component_output_indices = (
+    component_unmut_output_indices = (
         findall(in(component_outputs), name.(fout))...,
-        findall(in(component_outputs), name.(foutin))...,
         )
+    component_mut_output_indices = (
+        length(fout).+findall(in(component_outputs), name.(foutin))...,
+        )
+    #alternatively, we could just do:
+    # component_unmut_output_indices = 1:length(fout)
+    # component_unmut_output_indices = length(fout)+1:length(component_outputs)
+    component_output_indices = (component_unmut_output_indices...,component_mut_output_indices...)
 
     # named variables corresponding to component inputs/outputs
-    argin = getindices(combined_inputs, component_input_indices)
-    argout = getindices(combined_outputs, component_output_indices)
+    argin = getindices(combined_inputs, component_input_indices) #---> this is always the same as combined_inputs
+    argout = getindices(combined_outputs, component_output_indices) #---> this is always the same as combined_outputs
 
     # construct input and output vectors
     x0 = combine(argin)
@@ -99,18 +105,22 @@ function ExplicitComponent(func, fin, fout, foutin;
             # use `func` to construct `f`
             f = function(y, x)
                 # get new component inputs/outputs
+                # Going from input vectors to tuples of arguments. The arguments in the tuples are views to the vector elements.
                 new_component_inputs = separate(argin, x)
                 new_component_outputs = separate(argout, y)
+                                
                 # replace default inputs with new component inputs/outputs
+                #  Note: Could we get rid of this? Seems like new_inputs = new_component_inputs, new_combined_outputs=new_component_outputs
                 new_inputs = setindices(default_inputs, new_component_inputs, component_input_indices)
                 new_combined_outputs = setindices(default_outputs, new_component_outputs, component_output_indices)
+
                 # separate not-in-place and in-place outputs
-                new_outputs = new_combined_outputs[1:length(fout)]
                 new_inplace = new_combined_outputs[length(fout) + 1 : end]
                 # call function to get new outputs
-                new_combined_outputs = Tuple(func(new_inplace..., new_inputs...))
-                # update output vector
-                combine!(y, getindices(new_combined_outputs, component_output_indices))
+                new_outputs = Tuple(func(new_inplace..., new_inputs...))
+                # update output vector: replace the first elements 
+                combine!(y, getindices(new_outputs, component_unmut_output_indices))
+
                 # return result
                 return y
             end
