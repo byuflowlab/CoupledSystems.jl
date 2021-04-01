@@ -338,7 +338,7 @@ function output_mapping_matrices(argin, argstate, argout)
                 @goto next_output_variable
             else
                 # check next system input
-                idx_state += length(argin[j])
+                idx_state += length(argstate[j])
             end
         end
         error("No input or state variable found for output `$(name(argout[i]))`")
