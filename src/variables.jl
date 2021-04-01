@@ -301,9 +301,13 @@ function output_mapping_matrices(argin, argstate, argout)
     nu = sum(length.(argstate))
     ny = sum(length.(argout))
 
-    # initialize matrices
+    # allocate matrices
     dfdx = BitArray(undef, ny, nx)
     dfdu = BitArray(undef, ny, nu)
+
+    # initialize matrices
+    dfdx .= false
+    dfdu .= false
 
     # output variable starting index
     idx_out = 0
