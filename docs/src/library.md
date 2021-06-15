@@ -9,10 +9,10 @@ Depth = 3
 
 ### System Variables
 ```@docs
-@var
+@named
 NamedVar
-name
-value
+get_name
+get_value
 combine
 combine!
 separate

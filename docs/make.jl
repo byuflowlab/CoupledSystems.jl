@@ -7,6 +7,7 @@ makedocs(;
         "Home" => "index.md",
         "Getting Started" => "guide.md",
         "Theory" => "theory.md",
+        "Examples" => "examples.md",
         "Library" => "library.md"
     ],
     sitename="CoupledSystems.jl",

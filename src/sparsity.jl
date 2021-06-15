@@ -1,6 +1,37 @@
 # NOTE: The code in this file comes from SNOW.jl, eventually it might be removed
 # from here and imported from there.
 
+# --- sparsity patterns --- #
+
+"""
+    AbstractSparsityPattern
+
+Abstract type representing the sparsity pattern of a jacobian matrix
+"""
+abstract type AbstractSparsityPattern end
+
+"""
+    DensePattern <: AbstractSparsityPattern
+
+Type which indicates that a jacobian is dense
+"""
+struct DensePattern <: AbstractSparsityPattern end
+
+"""
+    SparsePattern{TI} <: AbstractSparsityPattern
+
+Type which indicates that a jacobian is sparse and indicates the non-zero rows
+and columns
+
+# Fields:
+ - `rows::Vector{TI}`: Row of each non-zero matrix element
+ - `cols::Vector{TI}`: Column of each non-zero matrix element
+"""
+struct SparsePattern{TI} <: AbstractSparsityPattern
+    rows::Vector{TI}
+    cols::Vector{TI}
+end
+
 """
     SparsePattern(A::SparseMatrixCSC)
 construct sparse pattern from representative sparse matrix

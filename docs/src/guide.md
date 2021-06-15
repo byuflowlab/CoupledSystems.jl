@@ -12,20 +12,20 @@ Our goal is to manipulate this problem in order to create a single explicit func
 
 ## Defining System Variables
 
-Let's start by loading the package and defining the system variables.  This can be done with the ``@var`` macro.
+Let's start by loading the package and defining the system variables.  This can be done with the ``@named`` macro.
 
 ```@example guide
 using CoupledSystems
 
 # Name all variables and give them default values
-@var x = 0.0
-@var y1 = 0.0
-@var y2 = 0.0
-@var z1 = 0.0
-@var z2 = 0.0
-@var f = 0.0
-@var g1 = 0.0
-@var g2 = 0.0
+@named x = 0.0
+@named y1 = 0.0
+@named y2 = 0.0
+@named z1 = 0.0
+@named z2 = 0.0
+@named f = 0.0
+@named g1 = 0.0
+@named g2 = 0.0
 nothing #hide
 ```
 
@@ -137,10 +137,10 @@ Notice that the two disciplinary components have been converted to implicit comp
 
 ```@example guide
 # convert discipline 1 into an implicit component
-d1i = ImplicitComponent(d1)
+d1i = make_implicit(d1)
 
 # convert discipline 2 into an implicit component
-d2i = ImplicitComponent(d2)
+d2i = make_implicit(d2)
 
 nothing #hide
 ```
@@ -190,7 +190,7 @@ Let's now update the XDSM diagram to account for the newly constructed implicit 
 Now that we have a single implicit system of equations, let's couple it with a nonlinear solver in order to solve for the outputs.  We represent the resulting component as an explicit component.  Note that the initial guess for the Newton solver corresponds to the default values of the variables `y1` and `y2`.
 
 ```@example guide
-mda = ExplicitComponent(isys; solver=Newton())
+mda = add_solver(isys; solver=Newton())
 nothing #hide
 ```
 
@@ -198,7 +198,7 @@ The default outputs for an implicit component/system which is converted to a exp
 
 ```@example guide
 fout = (y1, y2)
-mda = ExplicitComponent(isys, fout; solver=Newton())
+mda = add_solver(isys, fout; solver=Newton())
 nothing #hide
 ```
 
@@ -215,7 +215,7 @@ foutin = ()
 fcomp = (y1, y2) -> (y1, y2)
 comp = ExplicitComponent(fcomp, fin, fout, foutin; deriv = ForwardFD())
 
-mda = ExplicitComponent(isys, comp; solver=Newton())
+mda = add_solver(isys, comp; solver=Newton())
 nothing #hide
 ```
 

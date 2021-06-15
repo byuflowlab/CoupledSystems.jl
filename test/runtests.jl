@@ -10,9 +10,9 @@ using Test
     z1 = rand(10, 10)
 
     # define each named variable
-    @var x = x1
-    @var y = y1
-    @var z = z1
+    @named x = x1
+    @named y = y1
+    @named z = z1
 
     # create tuple of named variables
     vars = (x, y, z)
@@ -34,9 +34,9 @@ end
     # This uses the paraboloid example from OpenMDAO
 
     # define variables and set defaults
-    @var x = 0.0
-    @var y = 0.0
-    @var fxy = 0.0
+    @named x = 0.0
+    @named y = 0.0
+    @named fxy = 0.0
 
     # construct paraboloid function (and define inputs and outputs)
     fin = (x, y)
@@ -113,9 +113,9 @@ end
     # This uses the paraboloid example from OpenMDAO
 
     # define variables and set defaults
-    @var x = 0.0
-    @var y = 0.0
-    @var fxy = 0.0
+    @named x = 0.0
+    @named y = 0.0
+    @named fxy = 0.0
 
     # construct template function
     fin = (x, y)
@@ -184,9 +184,9 @@ end
     # This uses the paraboloid example from OpenMDAO
 
     # define variables and set defaults
-    @var x = 0.0
-    @var y = 0.0
-    @var fxy = 0.0
+    @named x = 0.0
+    @named y = 0.0
+    @named fxy = 0.0
 
     # construct template function
     fin = (x, y)
@@ -198,7 +198,7 @@ end
     xcomp = ExplicitComponent(func, fin, fout, foutin)
 
     # construct implicit component from explicit component
-    icomp = ImplicitComponent(xcomp)
+    icomp = make_implicit(xcomp)
 
     r = zeros(1)
     drdx = zeros(1,2)
@@ -266,14 +266,14 @@ end
 @testset "ExplicitSystem" begin
 
     # define system variables and defaults
-    @var x = 0.0
-    @var y = 0.0
-    @var a = 0.0
-    @var b = 0.0
-    @var c = 0.0
-    @var fp = 0.0
-    @var fq = 0.0
-    @var ft = zeros(2)
+    @named x = 0.0
+    @named y = 0.0
+    @named a = 0.0
+    @named b = 0.0
+    @named c = 0.0
+    @named fp = 0.0
+    @named fq = 0.0
+    @named ft = zeros(2)
 
     # construct template function for paraboloid component
     fin = (x, y)
@@ -353,14 +353,14 @@ end
 @testset "ExplicitSystem - Derivatives" begin
 
     # define system variables and defaults
-    @var x = 0.0
-    @var y = 0.0
-    @var a = 0.0
-    @var b = 0.0
-    @var c = 0.0
-    @var fp = 0.0
-    @var fq = 0.0
-    @var ft = zeros(2)
+    @named x = 0.0
+    @named y = 0.0
+    @named a = 0.0
+    @named b = 0.0
+    @named c = 0.0
+    @named fp = 0.0
+    @named fq = 0.0
+    @named ft = zeros(2)
 
     # construct template function for paraboloid component
     fin = (x, y)
@@ -457,10 +457,10 @@ end
     # This uses the quadratic example from OpenMDAO
 
     # variables
-    @var a = 0.0
-    @var b = 0.0
-    @var c = 0.0
-    @var x = 0.0
+    @named a = 0.0
+    @named b = 0.0
+    @named c = 0.0
+    @named x = 0.0
 
     # template residual function
     argin = (a, b, c)
@@ -517,18 +517,18 @@ end
     drdx = zeros(1,3)
     drdy = zeros(1,1)
 
-    comp1 = ImplicitComponent(func, argin, argout, r; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
-        fdfdy=fdfdy!, fdf=fdf!, drdx=drdx, drdy=drdy)
-    comp2 = ImplicitComponent(func, argin, argout, r; dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
-        fdfdy=fdfdy!, fdf=fdf!, drdx=drdx, drdy=drdy)
-    comp3 = ImplicitComponent(func, argin, argout, r; dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+    comp1 = ImplicitComponent(func, argin, argout; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+        fdfdy=fdfdy!, fdf=fdf!, r=r, drdx=drdx, drdy=drdy)
+    comp2 = ImplicitComponent(func, argin, argout; dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
+        fdfdy=fdfdy!, fdf=fdf!, r=r, drdx=drdx, drdy=drdy)
+    comp3 = ImplicitComponent(func, argin, argout; dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
         fdfdy=fdfdy!, fdf=fdf!)
-    comp4 = ImplicitComponent(func, argin, argout, r; dfdx=dfdx!, dfdy=dfdy!)
+    comp4 = ImplicitComponent(func, argin, argout; dfdx=dfdx!, dfdy=dfdy!)
     comp5 = ImplicitComponent(func, argin, argout; fdfdx=fdfdx!, fdfdy=fdfdy!)
     comp6 = ImplicitComponent(func, argin, argout; fdf=fdf!)
 
     comp7 = ImplicitComponent(argin, argout; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
-        fdfdy=fdfdy!, fdf=fdf!, drdx=drdx, drdy=drdy)
+        fdfdy=fdfdy!, fdf=fdf!, r=r, drdx=drdx, drdy=drdy)
     comp8 = ImplicitComponent(argin, argout; f=f!, dfdx=dfdx!, dfdy=dfdy!, fdfdx=fdfdx!,
         fdfdy=fdfdy!, fdf=fdf!)
     comp9 = ImplicitComponent(argin, argout; f=f!, dfdx=dfdx!, dfdy=dfdy!)
@@ -591,10 +591,10 @@ end
     # This uses the quadratic example from OpenMDAO
 
     # variables
-    @var a = 0.0
-    @var b = 0.0
-    @var c = 0.0
-    @var x = 0.0
+    @named a = 0.0
+    @named b = 0.0
+    @named c = 0.0
+    @named x = 0.0
 
     # template residual function
     fin = (a, b, c)
@@ -689,10 +689,11 @@ end
     # This uses the quadratic example from OpenMDAO
 
     # variables
-    @var a = 0.0
-    @var b = 0.0
-    @var c = 0.0
-    @var x = 0.0
+    @named a = 0.0
+    @named b = 0.0
+    @named c = 0.0
+    @named x = 0.0
+    @named r = 0.0
 
     # template residual function
     fin = (a, b, c)
@@ -705,15 +706,18 @@ end
     # create implicit component
     icomp = ImplicitComponent(func, fin, fout)
 
+    # split outputs into multiple outputs
+    argout = (r, )
+
     # create explicit component
-    xcomp = ExplicitComponent(icomp)
+    xcomp = make_explicit(icomp, argout)
 
     # inputs
-    x = [2, 0, -1]
+    x = [2, 0, -1, 0]
 
     # storage for outputs
     y = zeros(1)
-    dydx = zeros(1, 3)
+    dydx = zeros(1, 4)
 
     y1 = outputs!(xcomp, y, x)
     y2 = outputs!(xcomp, x)
@@ -755,14 +759,14 @@ end
 
     # We use an explicit system here, modified to become implicit
     # define system variables and defaults
-    @var x = 0.0
-    @var y = 0.0
-    @var a = 0.0
-    @var b = 0.0
-    @var c = 0.0
-    @var fp = 0.0
-    @var fq = 0.0
-    @var ft = zeros(2)
+    @named x = 0.0
+    @named y = 0.0
+    @named a = 0.0
+    @named b = 0.0
+    @named c = 0.0
+    @named fp = 0.0
+    @named fq = 0.0
+    @named ft = zeros(2)
 
     # construct template function for paraboloid component
     fin = (x, y)
@@ -908,14 +912,14 @@ end
 @testset "Sellar" begin
 
     # --- System Variables --- #
-    @var x = 0.0
-    @var y1 = 0.0
-    @var y2 = 0.0
-    @var z1 = 0.0
-    @var z2 = 0.0
-    @var f = 0.0
-    @var g1 = 0.0
-    @var g2 = 0.0
+    @named x = 0.0
+    @named y1 = 0.0
+    @named y2 = 0.0
+    @named z1 = 0.0
+    @named z2 = 0.0
+    @named f = 0.0
+    @named g1 = 0.0
+    @named g2 = 0.0
 
     # --- Define Discipline 1 --- #
 
@@ -1009,7 +1013,7 @@ end
     isys = ImplicitSystem(components_isys, inputs_isys)
 
     # --- Construct Explicit Component from Implicit System --- #
-    mda = ExplicitComponent(isys; solver=Newton())
+    mda = add_solver(isys; solver=Newton())
 
     # --- Construct Explicit System --- #
 
